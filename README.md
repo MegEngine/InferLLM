@@ -32,9 +32,9 @@ export NDK_ROOT=/path/to/ndk
 ### Run InferLLM
 If it is executed locally, execute `./alpaca -m chinese-alpaca-7b-q4.bin -t 4` directly. If you want to execute it on your mobile phone, you can use the adb command to copy alpaca and the model file to your mobile phone, and then execute `adb shell ./alpaca -m chinese-alpaca-7b-q4.bin -t 4`. 
 - x86 is：Intel(R) Xeon(R) CPU E5-2620 v4 @ 2.10GHz
+![x86 running](./asserts/x86.gif)
 - android is xiomi9，Qualcomm SM8150 Snapdragon 855
-
-![x86 running](./asserts/x86.gif) ![android running](./asserts/android.gif)
+![android running](./asserts/android.gif)
 
 ### License
 InferLLM is licensed under the Apache License, Version 2.0
