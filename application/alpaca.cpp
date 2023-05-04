@@ -24,47 +24,38 @@ struct app_params {
     float temp = 0.10f;
     float repeat_penalty = 1.30f;
 
-    int32_t n_batch = 8;  // batch size for prompt processing
-
     std::string model = "ggml-alpaca-7b-q4.bin";  // model path
-    std::string prompt;
 
     bool use_color = true;  // use color to distinguish generations and inputs
-    bool use_mmap = false;   // use mmap to load model
-
-    bool interactive = true;        // interactive mode
-    bool interactive_start = true;  // reverse prompt immediately
-    std::string antiprompt =
-            "";  // string upon seeing which more user input is prompted
+    bool use_mmap = false;  // use mmap to load model
 };
+
+void app_print_usage(int argc, char ** argv, const app_params & params) {
+    fprintf(stderr, "usage: %s [options]\n", argv[0]);
+    fprintf(stderr, "\n");
+    fprintf(stderr, "options:\n");
+    fprintf(stderr, "  -h, --help            show this help message and exit\n");
+    fprintf(stderr, "  --color               colorise output to distinguish prompt and user input from generations\n");
+    fprintf(stderr, "  -s SEED, --seed SEED  RNG seed (default: -1)\n");
+    fprintf(stderr, "  -t N, --threads N     number of threads to use during computation (default: %d)\n", params.n_threads);
+    fprintf(stderr, "  --top_k N             top-k sampling (default: %d)\n", params.top_k);
+    fprintf(stderr, "  --top_p N             top-p sampling (default: %.1f)\n", params.top_p);
+    fprintf(stderr, "  --repeat_last_n N     last n tokens to consider for penalize (default: %d)\n", params.repeat_last_n);
+    fprintf(stderr, "  --repeat_penalty N    penalize repeat sequence of tokens (default: %.1f)\n", params.repeat_penalty);
+    fprintf(stderr, "  -c N, --ctx_size N    size of the prompt context (default: %d)\n", params.n_ctx);
+    fprintf(stderr, "  --temp N              temperature (default: %.1f)\n", params.temp);
+    fprintf(stderr, "  -m FNAME, --model FNAME\n");
+    fprintf(stderr, "                        model path (default: %s)\n", params.model.c_str());
+    fprintf(stderr, "\n");
+}
 
 bool app_params_parse(int argc, char** argv, app_params& params) {
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
-
         if (arg == "-s" || arg == "--seed") {
             params.seed = std::stoi(argv[++i]);
         } else if (arg == "-t" || arg == "--threads") {
             params.n_threads = std::stoi(argv[++i]);
-        } else if (arg == "-p" || arg == "--prompt") {
-            params.interactive = false;
-            params.interactive_start = false;
-            params.use_color = false;
-
-            params.prompt = argv[++i];
-        } else if (arg == "-f" || arg == "--file") {
-            params.interactive = false;
-            params.interactive_start = false;
-            params.use_color = false;
-
-            std::ifstream file(argv[++i]);
-
-            std::copy(std::istreambuf_iterator<char>(file),
-                      std::istreambuf_iterator<char>(),
-                      back_inserter(params.prompt));
-
-        } else if (arg == "-n" || arg == "--n_predict") {
-            params.n_predict = std::stoi(argv[++i]);
         } else if (arg == "--top_k") {
             params.top_k = std::stoi(argv[++i]);
         } else if (arg == "-c" || arg == "--ctx_size") {
@@ -77,22 +68,16 @@ bool app_params_parse(int argc, char** argv, app_params& params) {
             params.repeat_last_n = std::stoi(argv[++i]);
         } else if (arg == "--repeat_penalty") {
             params.repeat_penalty = std::stof(argv[++i]);
-        } else if (arg == "-b" || arg == "--batch_size") {
-            params.n_batch = std::stoi(argv[++i]);
         } else if (arg == "-m" || arg == "--model") {
             params.model = argv[++i];
-        } else if (arg == "-i" || arg == "--interactive") {
-            params.interactive = true;
-        } else if (arg == "--interactive-start") {
-            params.interactive = true;
-            params.interactive_start = true;
         } else if (arg == "--color") {
             params.use_color = true;
-        } else if (arg == "-r" || arg == "--reverse-prompt") {
-            params.antiprompt = argv[++i];
         } else if (arg == "--mmap") {
             params.use_mmap = true;
-        } else {
+        } else if (arg == "-h" || arg == "--help") {
+            app_print_usage(argc, argv, params);
+            exit(0);
+        }else {
             exit(0);
         }
     }
@@ -138,9 +123,7 @@ int main(int argc, char** argv) {
 
 
     // print the basic parameters
-    if (params.interactive) {
-        fprintf(stderr, "%s: interactive mode on.\n", __func__);
-    }
+    fprintf(stderr, "%s: interactive mode on.\n", __func__);
     fprintf(stderr,
             "sampling parameters: temp = %f, top_k = %d, top_p = %f, "
             "repeat_last_n = %i, repeat_penalty = %f\n",
@@ -150,29 +133,23 @@ int main(int argc, char** argv) {
 
     std::vector<char> embd;
 
-    if (params.interactive) {
-        fprintf(stderr,
-                "== Running in chat mode. ==\n"
+    fprintf(stderr,
+            "== Running in chat mode. ==\n"
 #if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__)) || \
         defined(_WIN32)
-                " - Press Ctrl+C to interject at any time.\n"
+            " - Press Ctrl+C to interject at any time.\n"
 #endif
-                " - If you want to submit another line, end your input in "
-                "'\\'.\n");
-    }
+            " - If you want to submit another line, end your input in "
+            "'\\'.\n");
     // prefill the model with the prompt
     model->prefill(instruct_inp);
 
     // prompt user immediately after the starting prompt has been loaded
-    bool is_interacting = false;
-    if (params.interactive_start) {
-        is_interacting = true;
-    }
-
+    bool is_interacting = true;
     std::string user_input, output;
     //! main loop
     while (model->get_remain_token() > 0) {
-        if(!user_input.empty()){
+        if (!user_input.empty()) {
             int token;
             output = model->decode(user_input, token);
             user_input.clear();
