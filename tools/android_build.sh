@@ -58,7 +58,7 @@ elif [[ $OS =~ "NT" ]]; then
     echo "BUILD in NT ..."
     MAKEFILE_TYPE="Unix"
 fi
-SRC_DIR=$($READLINK -f "`dirname $0`/")
+SRC_DIR=$($READLINK -f "`dirname $0`/../")
 
 function cmake_build() {
     if [ $NDK_ROOT ];then
