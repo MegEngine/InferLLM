@@ -12,8 +12,6 @@
 
 namespace inferllm {
 
-
-
 /**
  * \brief Worker and related flag
  */
