@@ -35,6 +35,6 @@ If it is executed locally, execute `./alpaca -m chinese-alpaca-7b-q4.bin -t 4` d
 ![x86 running](./asserts/x86.gif)
 - android is xiomi9，Qualcomm SM8150 Snapdragon 855
 ![android running](./asserts/android.gif)
-
 ### License
 InferLLM is licensed under the Apache License, Version 2.0
+
