@@ -56,20 +56,19 @@ AttentionBlock::AttentionBlock(Graph* graph, std::shared_ptr<Tensor> input,
     INFER_ASSERT(embd % head == 0, "Embedding and head is not match.");
     m_index = 0;
     m_kstorage = make_unique<KvStorage>(std::vector<size_t>{nr_ctx, embd},
-                                             model_config.compt_type, device);
+                                        model_config.compt_type, device);
     m_vstorage = make_unique<KvStorage>(std::vector<size_t>{nr_ctx, embd},
-                                             model_config.compt_type, device);
+                                        model_config.compt_type, device);
     //! LayerNorm
     auto inputs = add_opr<LayerNorm>(device, name + "_norm", OpIOs{input},
                                      m_embd, true);
     //! kqv-matmul
-    auto v_out = add_opr<Attention>(device, name, inputs, embd, rot, nr_ctx,
-                                    head, model_config.weight_type,
-                                    m_kstorage.get(), m_vstorage.get())[0];
+    auto v_out =
+            add_opr<Attention>(device, name, inputs, embd, rot, nr_ctx, head,
+                               m_kstorage.get(), m_vstorage.get())[0];
     //! matmul proj
     auto proj_out = add_opr<MatMul>(device, name + ".wo", OpIOs{v_out},
-                                    std::vector<size_t>{embd, embd},
-                                    model_config.weight_type)[0];
+                                    std::vector<size_t>{embd, embd})[0];
     //! elemwise add
     auto output =
             add_opr<Elemwise>(device, name + ":Elemwise",
@@ -87,13 +86,13 @@ FeedForwardBlock::FeedForwardBlock(Graph* graph, std::shared_ptr<Tensor> input,
     auto norm_out = add_opr<LayerNorm>(device, name + ".ffn_norm", OpIOs{input},
                                        m_embd, true)[0];
     //! matmul0
-    auto matmul_out0 = add_opr<MatMul>(
-            device, name + ".feed_forward.w3", OpIOs{norm_out},
-            std::vector<size_t>{nff, embd}, model_config.weight_type)[0];
+    auto matmul_out0 =
+            add_opr<MatMul>(device, name + ".feed_forward.w3", OpIOs{norm_out},
+                            std::vector<size_t>{nff, embd})[0];
     //! matmul1
-    auto matmul_out1 = add_opr<MatMul>(
-            device, name + ".feed_forward.w1", OpIOs{norm_out},
-            std::vector<size_t>{nff, embd}, model_config.weight_type)[0];
+    auto matmul_out1 =
+            add_opr<MatMul>(device, name + ".feed_forward.w1", OpIOs{norm_out},
+                            std::vector<size_t>{nff, embd})[0];
     //! silu activation
     auto silu_out = add_opr<Elemwise>(device, name + "_silu",
                                       OpIOs{matmul_out1}, ElemMode::Silu)[0];
@@ -102,9 +101,9 @@ FeedForwardBlock::FeedForwardBlock(Graph* graph, std::shared_ptr<Tensor> input,
             add_opr<Elemwise>(device, name + "_elemwise",
                               OpIOs{silu_out, matmul_out0}, ElemMode::Mul)[0];
     //! matmul2
-    auto matmul_out2 = add_opr<MatMul>(
-            device, name + ".feed_forward.w2", OpIOs{mul_out},
-            std::vector<size_t>{embd, nff}, model_config.weight_type)[0];
+    auto matmul_out2 =
+            add_opr<MatMul>(device, name + ".feed_forward.w2", OpIOs{mul_out},
+                            std::vector<size_t>{embd, nff})[0];
     //! elemwise add
     auto output = add_opr<Elemwise>(device, name + "_add",
                                     OpIOs{this->input(), matmul_out2},
@@ -113,16 +112,16 @@ FeedForwardBlock::FeedForwardBlock(Graph* graph, std::shared_ptr<Tensor> input,
 }
 
 HeadBlock::HeadBlock(Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd,
-                     uint32_t vocab, UserConfig model_config,
-                     Device* device, const std::string& name)
+                     uint32_t vocab, UserConfig model_config, Device* device,
+                     const std::string& name)
         : OprBlockBase(input, device, name), m_embd(embd), m_graph(graph) {
     //! LayerNorm
     auto norm_out = add_opr<LayerNorm>(device, name + "norm", OpIOs{input},
                                        m_embd, true)[0];
     //! matmul
-    auto matmul_out = add_opr<MatMulLast>(device, name + "output", OpIOs{norm_out},
-                                      std::vector<size_t>{vocab, embd},
-                                      model_config.weight_type)[0];
+    auto matmul_out =
+            add_opr<MatMulLast>(device, name + "output", OpIOs{norm_out},
+                                std::vector<size_t>{vocab, embd})[0];
     set_output(matmul_out);
 }
 
@@ -139,97 +138,17 @@ void HeadBlock::execute(WorkSpace* workspace, uint32_t nr_past,
 }
 
 EmbdBlock::EmbdBlock(Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd,
-                     uint32_t vocab, UserConfig model_config,
-                     Device* device, const std::string& name)
+                     uint32_t vocab, UserConfig model_config, Device* device,
+                     const std::string& name)
         : OprBlockBase(input, device, name), m_embd(embd), m_graph(graph) {
-    auto embd_out = add_opr<Embedding>(
-            OpIOs{input}, embd, vocab, model_config.weight_type,
-            model_config.compt_type, device, "tok_embeddings")[0];
+    auto embd_out = add_opr<Embedding>(OpIOs{input}, embd, vocab,
+                                       model_config.compt_type, device,
+                                       "tok_embeddings")[0];
     set_output(embd_out);
 }
 
-void Graph::load(std::shared_ptr<InputFile> fin, const LlmParams& param,
-                 inferllm::ModelType model_type) {
-    m_param = param;
-    m_input = std::make_shared<Tensor>(m_device, m_name + ":input");
- 
-    Graph::constuct_llm();
-
-    optimize();
-
-    while (true) {
-        int32_t n_dims;
-        int32_t length;
-        int32_t ftype;
-        if (fin->eof()) {
-            break;
-        }
-
-        fin->read_raw(reinterpret_cast<char*>(&n_dims), sizeof(n_dims));
-        fin->read_raw(reinterpret_cast<char*>(&length), sizeof(length));
-        fin->read_raw(reinterpret_cast<char*>(&ftype), sizeof(ftype));
-
-        if (fin->eof()) {
-            break;
-        }
-
-        size_t nr_number = 1;
-        int32_t shape[2] = {1, 1};
-        for (int i = 0; i < n_dims; ++i) {
-            fin->read_raw(reinterpret_cast<char*>(&shape[i]), sizeof(shape[i]));
-            nr_number *= shape[i];
-        }
-
-        std::string name(length, 0);
-        fin->read_raw(&name[0], length);
-        INFER_ASSERT(m_weights_map.count(name) == 1,
-                     "Error weight is not found when loading.");
-        if (model_type >= ModelType::LLAMA_FILE_VERSION_GGJT_V1) {
-            // skip to the next multiple of 32 bytes
-            fin->skip(-fin->tell() & 31);
-        }
-        auto weight = m_weights_map[name];
-        INFER_ASSERT(weight->length() == nr_number,
-                     "Error length of weight is mismatch.");
-        weight->set_file(fin, fin->tell());
-        fin->skip(weight->length_in_byte());
-    }
-}
-
-void Graph::constuct_llm() {
-    std::shared_ptr<Tensor> input = m_input;
-    //! embd
-    input = add_block<EmbdBlock>(this, input, m_param.n_embd, m_param.n_vocab,
-                                 m_model_config, m_device, "");
-
-    int nr_layer = m_param.n_layer;
-    for (int i = 0; i < nr_layer; i++) {
-        std::string name = "layers." + std::to_string(i);
-        input = add_block<AttentionBlock>(
-                this, input, m_param.n_embd, m_param.n_head, m_param.n_rot,
-                m_param.n_ctx, m_model_config, m_device, name + ".attention");
-
-        input = add_block<FeedForwardBlock>(this, input, m_param.n_embd,
-                                            m_param.n_mult, m_model_config,
-                                            m_device, name);
-    }
-    //! the last layer
-    m_output =
-            add_block<HeadBlock>(this, input, m_param.n_embd, m_param.n_vocab,
-                                 m_model_config, m_device, "");
-    //! collect all the weights
-    size_t total_data = 0;
-    for (auto block : m_blocks) {
-        auto all_weights = block->get_all_weights();
-        for (auto weight : all_weights) {
-            std::string name = weight->name();
-            INFER_ASSERT(m_weights_map.count(name) == 0, "dumplicated weight.");
-            m_weights_map[name] = weight;
-            total_data += weight->length_in_byte();
-        }
-    }
-    INFER_LOG("total weights size is %zu\n", total_data);
-}
+//! Graph
+///////////////////////////////////////////////////////////////////////////
 
 size_t Graph::get_workspace_in_byte() {
     size_t max_workspace = 0;
@@ -270,9 +189,6 @@ void Graph::reset_ctx() {
     for (size_t i = 0; i < m_blocks.size(); i++) {
         m_blocks[i]->reset_ctx();
     }
-}
-
-void Graph::optimize() {
 }
 
 Graph::~Graph() {

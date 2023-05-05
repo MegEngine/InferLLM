@@ -44,7 +44,8 @@ public:
 
     Tensor(std::vector<size_t> shape, DType dtype, Device* device) {
         m_device = device;
-        set_shape(shape, dtype);
+        set_shape(shape);
+        set_dtype(dtype);
         m_state = TensorState::OutSide;
     }
 
@@ -53,9 +54,13 @@ public:
     std::vector<size_t> shape() { return m_shape; }
 
     void set_shape(std::vector<size_t> shape, DType dtype) {
+        set_shape(shape);
+        set_dtype(dtype);
+    }
+
+    void set_shape(std::vector<size_t> shape) {
         m_dims = shape.size();
         m_shape = shape;
-        m_dtype = dtype;
         //! init the tensor as continue tensor
         m_stride.resize(m_dims);
         m_stride[m_dims - 1] = 1;
@@ -65,6 +70,10 @@ public:
         }
         m_length = m_shape[0] * m_stride[0];
     }
+
+    void set_dtype(DType dtype) { m_dtype = dtype; }
+    DType dtype() { return m_dtype; }
+
     std::vector<size_t> stride() { return m_stride; }
 
     OpBase* owner_op() { return m_owner_op; }
@@ -74,7 +83,6 @@ public:
     void set_name(const std::string& name) { m_name = name; }
 
     uint32_t dims() { return m_dims; }
-    DType dtype() { return m_dtype; }
 
     bool is_own() const { return m_state == TensorState::Own; }
 

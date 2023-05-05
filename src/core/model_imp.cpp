@@ -10,65 +10,13 @@
 using namespace inferllm;
 
 void ModelImp::load(const std::string& model_path){
+    m_vocab = std::make_shared<Vocab>();
     std::shared_ptr<InputFile> fin =
             std::make_shared<InputFile>(model_path, m_config.enable_mmap);
 
-    // verify the magic number wrote when model convert
-    uint32_t magic;
-    uint32_t version = 0;
-    fin->read_raw((char*)&magic, sizeof(magic));
-    if(magic != 'ggml'){
-        fin->read_raw((char*)&version, sizeof(version));
-    }
-    if (magic == 'ggml' && version == 0) {
-        m_model_type = ModelType::LLAMA_FILE_VERSION_GGML;
-    } else if (magic == 'ggmf' && version == 1) {
-        m_model_type = ModelType::LLAMA_FILE_VERSION_GGMF_V1;
-    } else if (magic == 'ggjt' && version == 1) {
-        m_model_type = ModelType::LLAMA_FILE_VERSION_GGJT_V1;
-    } else{
-        INFER_ASSERT(0, "unsupported model type.");
-    }
-
-    INFER_LOG("model is %s , version = %d\n", magic != 'ggml' ? "new" : "old",
-              version);
-
-    //int n_parts = 1;
-    // load param
-    auto& hparams = m_param;
-
-    fin->read_raw((char*)&hparams.n_vocab, sizeof(hparams.n_vocab));
-    fin->read_raw((char*)&hparams.n_embd, sizeof(hparams.n_embd));
-    fin->read_raw((char*)&hparams.n_mult, sizeof(hparams.n_mult));
-    fin->read_raw((char*)&hparams.n_head, sizeof(hparams.n_head));
-    fin->read_raw((char*)&hparams.n_layer, sizeof(hparams.n_layer));
-    fin->read_raw((char*)&hparams.n_rot, sizeof(hparams.n_rot));
-    fin->read_raw((char*)&hparams.ftype, sizeof(hparams.ftype));
-
-    INFER_LOG("%s: n_vocab         = %u\n", __func__, hparams.n_vocab);
-    INFER_LOG("%s: n_ctx           = %u\n", __func__, hparams.n_ctx);
-    INFER_LOG("%s: n_embd          = %u\n", __func__, hparams.n_embd);
-    INFER_LOG("%s: n_mult          = %u\n", __func__, hparams.n_mult);
-    INFER_LOG("%s: n_head          = %u\n", __func__, hparams.n_head);
-    INFER_LOG("%s: n_layer         = %u\n", __func__, hparams.n_layer);
-    INFER_LOG("%s: n_rot           = %u\n", __func__, hparams.n_rot);
-    INFER_LOG("%s: model ftype     = %u\n", __func__, hparams.ftype);
-
-    //! TODO: this param should pass when inference, now just write hard
-    //! code
-    hparams.n_ctx = 2048;
+    m_param.n_ctx = m_config.nr_ctx;
+    m_graph->load(fin, m_param, m_vocab);
     m_logist.resize(m_param.n_vocab);
-
-    //! load vocabulary
-    if (m_model_type == ModelType::LLAMA_FILE_VERSION_GGJT_V1) {
-        m_vocab->load_vocab_with_score(fin, m_param.n_vocab);
-    } else {
-        m_vocab->load_vocab(fin, m_param.n_vocab);
-    }
-
-    //! load the graph and weights
-    //! TODO: support run model on multiply device
-    m_graph->load(fin, m_param, m_model_type);
 }
 
 void ModelImp::prefill(const std::string& promote) {

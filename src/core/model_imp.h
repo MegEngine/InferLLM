@@ -39,7 +39,6 @@ public:
     ModelImp(const ModelConfig& config, const std::string& name)
             : m_name(name), m_config(config) {
         uint32_t nr_thread = config.nr_thread;
-        m_vocab = std::make_shared<Vocab>();
 #if INFER_X86
         m_device = make_unique<Device>(KernelType::X86, nr_thread);
 #elif INFER_ARM
@@ -50,8 +49,7 @@ public:
 
         UserConfig user_config;
         user_config.compt_type = dtype_from_str(config.compt_type);
-        user_config.weight_type = dtype_from_str(config.weight_type);
-        m_graph = std::make_shared<Graph>(user_config, m_device.get(), name);
+        m_graph = Graph::make_graph(user_config, m_device.get(), name);
         m_past = 0;
     }
     //! load the model from model_path
@@ -100,7 +98,6 @@ private:
     uint32_t m_repeat_last_n;
 
     int32_t m_pre_token;
-    ModelType m_model_type;
 
     std::string m_name;
     LlmParams m_param;
