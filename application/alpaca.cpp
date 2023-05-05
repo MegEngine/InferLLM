@@ -28,6 +28,8 @@ struct app_params {
 
     bool use_color = true;  // use color to distinguish generations and inputs
     bool use_mmap = false;  // use mmap to load model
+    std::string dtype = "float32";  // configure the compute dtype
+    std::string mtype = "llama";  // the model type name, llama
 };
 
 void app_print_usage(int argc, char ** argv, const app_params & params) {
@@ -46,6 +48,9 @@ void app_print_usage(int argc, char ** argv, const app_params & params) {
     fprintf(stderr, "  --temp N              temperature (default: %.1f)\n", params.temp);
     fprintf(stderr, "  -m FNAME, --model FNAME\n");
     fprintf(stderr, "                        model path (default: %s)\n", params.model.c_str());
+    fprintf(stderr, "  --mmap                enable mmap when read weights, default = false\n");
+    fprintf(stderr, "  -d type               configure the compute type, default float32, can be float32 and flot16 now.\n");
+    fprintf(stderr, "  --model_type type     the model type name, default llama, can only be llama now.\n");
     fprintf(stderr, "\n");
 }
 
@@ -60,6 +65,8 @@ bool app_params_parse(int argc, char** argv, app_params& params) {
             params.top_k = std::stoi(argv[++i]);
         } else if (arg == "-c" || arg == "--ctx_size") {
             params.n_ctx = std::stoi(argv[++i]);
+        } else if (arg == "-d" || arg == "--dtype") {
+            params.dtype = argv[++i];
         } else if (arg == "--top_p") {
             params.top_p = std::stof(argv[++i]);
         } else if (arg == "--temp") {
@@ -77,7 +84,7 @@ bool app_params_parse(int argc, char** argv, app_params& params) {
         } else if (arg == "-h" || arg == "--help") {
             app_print_usage(argc, argv, params);
             exit(0);
-        }else {
+        } else {
             exit(0);
         }
     }
@@ -102,14 +109,13 @@ int main(int argc, char** argv) {
 
     int64_t t_load_us = 0;
     inferllm::ModelConfig config;
-    config.device = "cpu";
-    config.weight_type = "int4";
-    config.compt_type = "float32";
+    config.compt_type = params.dtype;
     config.nr_thread = params.n_threads;
     config.enable_mmap = params.use_mmap;
+    config.nr_ctx = params.n_ctx;
 
     std::shared_ptr<inferllm::Model> model =
-            std::make_shared<inferllm::Model>(config, "alpaca");
+            std::make_shared<inferllm::Model>(config, params.mtype);
     model->load(params.model);
     model->init(params.top_k, params.top_p, params.temp, params.repeat_penalty,
                 params.repeat_last_n, params.seed);

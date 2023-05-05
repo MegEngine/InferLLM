@@ -9,26 +9,18 @@ namespace inferllm {
 
 //! TODO: redefine this member of the struct
 struct LlmParams {
-    int32_t n_vocab = 32000;
-    int32_t n_ctx = 512;  // this is provided as user input?
-    int32_t n_embd = 4096;
-    int32_t n_mult = 256;
-    int32_t n_head = 32;
-    int32_t n_layer = 32;
-    int32_t n_rot = 64;
-    int32_t ftype = 0;
+    int32_t n_vocab;
+    int32_t n_embd;
+    int32_t n_mult;
+    int32_t n_head;
+    int32_t n_layer;
+    int32_t n_rot;
+    int32_t ftype;
+    int32_t n_ctx;  // this is provided as user input?
 };
 
 struct UserConfig {
     DType compt_type;
-    DType weight_type;
-
-};
-
-enum class ModelType {
-    LLAMA_FILE_VERSION_GGML = 0,
-    LLAMA_FILE_VERSION_GGMF_V1,  // added version field and scores in vocab
-    LLAMA_FILE_VERSION_GGJT_V1
 };
 
 class Graph;
@@ -148,17 +140,20 @@ public:
         m_workspace = make_unique<WorkSpace>();
     }
 
-    ~Graph();
+    static std::shared_ptr<Graph> make_graph(UserConfig model_config,
+                                             Device* device,
+                                             const std::string& name);
 
-    void load(std::shared_ptr<InputFile> fin, const LlmParams& param,
-              ModelType model_type);
-
-    void optimize();
+    virtual ~Graph();
 
     void execute(std::vector<int32_t> in_token, std::vector<float>& logist,
                  uint32_t nr_past, bool prefill = false);
 
     Device* device() { return m_device; }
+
+    std::string name() { return m_name; }
+
+    UserConfig model_config() { return m_model_config; }
 
     size_t get_workspace_in_byte();
 
@@ -169,27 +164,31 @@ public:
         return block->output();
     }
 
-    uint32_t get_nr_ctx() { return m_param.n_ctx; }
-
-    uint32_t get_nr_vocab() { return m_param.n_vocab; }
-
     void reset_ctx();
-
-private:
-    void constuct_llm();
 
     bool same_input_shape(std::vector<int32_t> in_token);
 
+    virtual void load(std::shared_ptr<InputFile> fin, LlmParams& param,
+                      std::shared_ptr<Vocab> vocab) = 0;
+
+    virtual uint32_t get_nr_ctx() = 0;
+
+    virtual uint32_t get_nr_vocab() = 0;
+
+    virtual void constuct_llm() = 0;
+
+    std::shared_ptr<Tensor> m_input;
+    std::shared_ptr<Tensor> m_output;
+    std::unordered_map<std::string, std::shared_ptr<Tensor>> m_weights_map;
+    std::vector<std::shared_ptr<OprBlockBase>> m_blocks;
+
+private:
+
     std::string m_name;
-    LlmParams m_param;
     UserConfig m_model_config;
     Device* m_device = nullptr;
 
     std::shared_ptr<Tensor> m_embeddings;
     std::unique_ptr<WorkSpace> m_workspace;
-    std::unordered_map<std::string, std::shared_ptr<Tensor>> m_weights_map;
-    std::vector<std::shared_ptr<OprBlockBase>> m_blocks;
-    std::shared_ptr<Tensor> m_input;
-    std::shared_ptr<Tensor> m_output;
 };
 }  // namespace inferllm

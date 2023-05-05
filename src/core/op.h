@@ -112,11 +112,11 @@ private:
 class MatMul : public OpBase {
 public:
     MatMul(Device* device, const std::string& name, OpIOs inputs,
-           std::vector<size_t> shape, DType dtype)
+           std::vector<size_t> shape)
             : OpBase(device, name, inputs) {
         add_outputs(std::make_shared<Tensor>(device, name + "_out0"));
         auto weight = std::make_shared<Tensor>(device, name + ".weight");
-        weight->set_shape(shape, dtype);
+        weight->set_shape(shape);
         set_weights({weight});
     }
 
@@ -299,8 +299,8 @@ public:
 class MatMulCacheKv : public OpBase {
 public:
     MatMulCacheKv(Device* device, const std::string& name, OpIOs inputs,
-                  uint32_t embd, uint32_t nr_ctx, DType dtype,
-                  KvStorage* kstorage, KvStorage* vstorage)
+                  uint32_t embd, uint32_t nr_ctx, KvStorage* kstorage,
+                  KvStorage* vstorage)
             : OpBase(device, name, inputs),
               m_embd(embd),
               m_ctx(nr_ctx),
@@ -311,11 +311,11 @@ public:
         add_outputs(std::make_shared<Tensor>(device, name + "_out_v"));
 
         auto weight_q = std::make_shared<Tensor>(device, name + ".wq.weight");
-        weight_q->set_shape(std::vector<size_t>{embd, embd}, dtype);
+        weight_q->set_shape(std::vector<size_t>{embd, embd});
         auto weight_k = std::make_shared<Tensor>(device, name + ".wk.weight");
-        weight_k->set_shape(std::vector<size_t>{embd, embd}, dtype);
+        weight_k->set_shape(std::vector<size_t>{embd, embd});
         auto weight_v = std::make_shared<Tensor>(device, name + ".wv.weight");
-        weight_v->set_shape(std::vector<size_t>{embd, embd}, dtype);
+        weight_v->set_shape(std::vector<size_t>{embd, embd});
 
         set_weights({weight_q, weight_k, weight_v});
     }
@@ -380,7 +380,7 @@ class Attention : public OpBase {
 public:
     Attention(Device* device, const std::string& name, OpIOs inputs,
               uint32_t embd, uint32_t rot, uint32_t nr_ctx, uint32_t head,
-              DType dtype, KvStorage* kstorage, KvStorage* vstorage)
+              KvStorage* kstorage, KvStorage* vstorage)
             : OpBase(device, name, inputs),
               m_embd(embd),
               m_head(head),
@@ -391,11 +391,11 @@ public:
         add_outputs(std::make_shared<Tensor>(device, name + "_out"));
 
         auto weight_q = std::make_shared<Tensor>(device, name + ".wq.weight");
-        weight_q->set_shape(std::vector<size_t>{embd, embd}, dtype);
+        weight_q->set_shape(std::vector<size_t>{embd, embd});
         auto weight_k = std::make_shared<Tensor>(device, name + ".wk.weight");
-        weight_k->set_shape(std::vector<size_t>{embd, embd}, dtype);
+        weight_k->set_shape(std::vector<size_t>{embd, embd});
         auto weight_v = std::make_shared<Tensor>(device, name + ".wv.weight");
-        weight_v->set_shape(std::vector<size_t>{embd, embd}, dtype);
+        weight_v->set_shape(std::vector<size_t>{embd, embd});
 
         set_weights({weight_q, weight_k, weight_v});
     }
@@ -442,7 +442,7 @@ private:
 
 class Embedding : public OpBase {
 public:
-    Embedding(OpIOs inputs, uint32_t embd, uint32_t vocab, DType dtype,
+    Embedding(OpIOs inputs, uint32_t embd, uint32_t vocab,
               DType compt_type, Device* device, const std::string& name)
             : OpBase(device, name, inputs),
               m_embd(embd),
@@ -452,7 +452,7 @@ public:
 
         auto embeddings = std::make_shared<Tensor>(device, name + ".weight");
         std::vector<size_t> shape = {(size_t)embd, (size_t)vocab};
-        embeddings->set_shape(shape, dtype);
+        embeddings->set_shape(shape);
         set_weights({embeddings});
     }
     void deduce_output_shape() override {

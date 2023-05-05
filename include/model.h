@@ -12,11 +12,10 @@
 namespace inferllm {
 
 struct ModelConfig {
-    std::string device;
     //! dtype include 'float32','float16','int8','int4'
-    std::string weight_type;
     std::string compt_type;
     uint32_t nr_thread;
+    uint32_t nr_ctx;
     bool enable_mmap;
 };
 
