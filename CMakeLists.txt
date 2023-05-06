@@ -54,9 +54,6 @@ else()
 endif()
 
 if(ENABLE_ASAN)
-  if(INFERLLM_ACHIEVE_ALL)
-    message(FATAL_ERROR "Build for INFERLLM_ENABLE_ASAN, do not support static libc")
-  endif()
   if(${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang")
     set(CMAKE_CXX_FLAGS
         " -fsanitize=address -g -O0 -static-libsan ${CMAKE_CXX_FLAGS}"
@@ -68,6 +65,7 @@ if(ENABLE_ASAN)
     )
     set(CMAKE_LINK_FLAGS "-fsanitize=address -static-libasan ${CMAKE_LINK_FLAGS}")
   endif()
+  add_definitions(-DENABLE_ASAN)
 endif()
 
 add_executable(alpaca application/alpaca.cpp)
