@@ -32,12 +32,12 @@ endif()
 
 if(ENABLE_DOT)
     message(STATUS "Enable dotprod feature in armv8.2-a")
-    set(CMAKE_CXX_FLAGS " -D__ARM_FEATURE_DOTPROD=1 ${CMAKE_CXX_FLAGS}")
+    set(CMAKE_CXX_FLAGS " -march=armv8.2-a+dotprod ${CMAKE_CXX_FLAGS}")
 endif()
 
 if(ENABLE_FP16)
     message(STATUS "Enable fp16 feature in armv8.2-a")
-    set(CMAKE_CXX_FLAGS " -D__ARM_FEATURE_FP16_VECTOR_ARITHMETIC=1 ${CMAKE_CXX_FLAGS}")
+    set(CMAKE_CXX_FLAGS " -march=armv8.2-a+fp16 ${CMAKE_CXX_FLAGS}")
 endif()
 
 file(GLOB_RECURSE SRC src/*/*.cpp src/*/*.h src/*.cpp)

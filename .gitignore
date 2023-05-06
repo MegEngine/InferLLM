@@ -1,1 +1,4 @@
 .cache/
+build/
+build-arm64-v8a/
+.vscode/
