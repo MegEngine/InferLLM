@@ -31,9 +31,10 @@ void Device::aligned_free(void* ptr) {
 #endif
 }
 
-size_t nr_allocate = 0;
-
 void* Device::allocate(size_t len) {
+#ifdef ENABLE_ASAN
+    return aligned_alloc(len);
+#else
     auto it = m_free_memory.lower_bound(len);
     void* ptr = nullptr;
     if (it != m_free_memory.end() && it->second.size() > 0) {
@@ -44,20 +45,26 @@ void* Device::allocate(size_t len) {
         }
     } else {
         ptr = aligned_alloc(len);
-        nr_allocate += len;
         m_alloc_memory[ptr] = len;
     }
     return ptr;
+
+#endif
 }
 
 void Device::free_device(void* ptr) {
+#ifdef ENABLE_ASAN
+    aligned_free(ptr);
+#else
     INFER_ASSERT(m_alloc_memory.count(ptr) == 1,
                  "memory is not allocated by the DeviceCPU.");
     size_t len = m_alloc_memory[ptr];
     m_free_memory[len].push_back(ptr);
+#endif
 }
 
 Device::~Device() {
+#ifndef ENABLE_ASAN
     for (auto it : m_free_memory) {
         for (auto ptr : it.second) {
             INFER_ASSERT(m_alloc_memory.count(ptr) == 1,
@@ -65,5 +72,5 @@ Device::~Device() {
             aligned_free(ptr);
         }
     }
-    INFER_LOG("total allocate memory is %zu\n", nr_allocate);
+#endif
 }
