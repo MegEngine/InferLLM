@@ -9,6 +9,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <memory>
 #include "file.h"
 
 namespace inferllm {
