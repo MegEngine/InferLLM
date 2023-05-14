@@ -39,7 +39,7 @@ inline void dequantize_row_q4_0_reference(const void* __restrict x,
     }
 }
 
-inline void quantize_row_q4_0_reference(const float* x, BlockQ40* y, int k) {
+inline size_t quantize_row_q4_0_reference(const float* x, BlockQ40* y, int k) {
     const int nb = k / QK40;
 
     uint8_t pp[QK40 / 2];
@@ -72,6 +72,7 @@ inline void quantize_row_q4_0_reference(const float* x, BlockQ40* y, int k) {
 
         memcpy(y[i].qs, pp, sizeof(pp));
     }
+    return nb * sizeof(BlockQ40);
 }
 
 //! quantize a row of float to int8
