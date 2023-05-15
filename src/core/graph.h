@@ -29,6 +29,9 @@ class OprBlockBase {
 public:
     OprBlockBase(std::shared_ptr<Tensor> input, Device* device,
                  const std::string& name);
+
+    OprBlockBase(std::vector<std::shared_ptr<Tensor>> inputs, Device* device,
+                 const std::string& name);
     size_t get_workspace_in_byte();
     void deduce_output_shape();
 
@@ -52,10 +55,10 @@ public:
         return all_weights;
     }
 
-    std::shared_ptr<Tensor> input() const { return m_input; };
+    std::shared_ptr<Tensor> input(int id = 0) const { return m_inputs[id]; };
     std::shared_ptr<Tensor> output() const { return m_output; };
 
-    void set_input(std::shared_ptr<Tensor> input) { m_input = input; };
+    void set_input(std::shared_ptr<Tensor> input) { m_inputs.push_back(input); };
     void set_output(std::shared_ptr<Tensor> output) { m_output = output; };
 
     std::string name() const { return m_name; }
@@ -67,7 +70,7 @@ public:
 private:
     std::string m_name;
     Device* m_device;
-    std::shared_ptr<Tensor> m_input;
+    std::vector<std::shared_ptr<Tensor>> m_inputs;
     std::shared_ptr<Tensor> m_output;
     std::vector<std::shared_ptr<OpBase>> m_oprs;
 };
@@ -108,7 +111,7 @@ private:
 
 class HeadBlock : public OprBlockBase {
 public:
-    HeadBlock(Graph* graph, std::shared_ptr<Tensor> m_output, uint32_t embd,
+    HeadBlock(Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd,
               uint32_t vocab, UserConfig model_config, Device* device,
               const std::string& name);
 
@@ -123,13 +126,31 @@ private:
 
 class EmbdBlock : public OprBlockBase {
 public:
-    EmbdBlock(Graph* graph, std::shared_ptr<Tensor> m_output, uint32_t embd,
+    EmbdBlock(Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd,
               uint32_t vocab, UserConfig model_config, Device* device,
               const std::string& name);
 
 private:
     uint32_t m_embd;
     uint32_t m_vocab;
+    Graph* m_graph;
+};
+
+class ElemwiseAddBlock : public OprBlockBase {
+public:
+    ElemwiseAddBlock(Graph* graph, std::vector<std::shared_ptr<Tensor>> inputs,
+                     Device* device, const std::string& name);
+
+private:
+    Graph* m_graph;
+};
+
+class LayerNormBlock : public OprBlockBase {
+public:
+    LayerNormBlock(Graph* graph, std::shared_ptr<Tensor> input, Device* device,
+                   const std::string& name, uint32_t embd);
+
+private:
     Graph* m_graph;
 };
 

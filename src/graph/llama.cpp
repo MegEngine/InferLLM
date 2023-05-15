@@ -122,12 +122,34 @@ void LlamaGraph::constuct_llm() {
     int nr_layer = m_param.n_layer;
     for (int i = 0; i < nr_layer; i++) {
         std::string name = "layers." + std::to_string(i);
-        input = add_block<AttentionBlock>(
-                this, input, m_param.n_embd, m_param.n_head, m_param.n_rot,
-                m_param.n_ctx, model_config(), device(), name + ".attention");
-        input = add_block<FeedForwardBlock>(this, input, m_param.n_embd,
-                                            m_param.n_mult, model_config(),
-                                            device(), name);
+        //! layer norm
+        std::shared_ptr<Tensor> attention_input = input;
+        auto norm_out_attention = add_block<LayerNormBlock>(
+                this, attention_input, device(), name + ".attention_norm",
+                m_param.n_embd);
+        //! attentin
+        auto attention_output = add_block<AttentionBlock>(
+                this, norm_out_attention, m_param.n_embd, m_param.n_head,
+                m_param.n_rot, m_param.n_ctx, model_config(), device(),
+                name + ".attention");
+        //! add
+        auto add_output = add_block<ElemwiseAddBlock>(
+                this, OpIOs{attention_input, attention_output}, device(),
+                name + ".attention:Elemwise");
+
+        std::shared_ptr<Tensor> feed_forward_input = add_output;
+        //! layer normal
+        auto ffn_norm_out =
+                add_block<LayerNormBlock>(this, feed_forward_input, device(),
+                                          name + ".ffn_norm", m_param.n_embd);
+        //! feed forward
+        auto ffn_output = add_block<FeedForwardBlock>(
+                this, ffn_norm_out, m_param.n_embd, m_param.n_mult,
+                model_config(), device(), name);
+        //! add
+        input = add_block<ElemwiseAddBlock>(
+                this, OpIOs{feed_forward_input, ffn_output}, device(),
+                name + ".ffn:Elemwise");
     }
     //! the last layer
     m_output =

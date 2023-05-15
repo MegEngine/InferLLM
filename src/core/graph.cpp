@@ -42,7 +42,13 @@ size_t OprBlockBase::get_workspace_in_byte() {
 
 OprBlockBase::OprBlockBase(std::shared_ptr<Tensor> input, Device* device,
                            const std::string& name)
-        : m_name(name), m_device(device), m_input(input) {}
+        : m_name(name), m_device(device) {
+    m_inputs.push_back(input);
+}
+
+OprBlockBase::OprBlockBase(std::vector<std::shared_ptr<Tensor>> inputs,
+                           Device* device, const std::string& name)
+        : m_name(name), m_device(device), m_inputs(inputs) {}
 
 AttentionBlock::AttentionBlock(Graph* graph, std::shared_ptr<Tensor> input,
                                uint32_t embd, uint32_t head, uint32_t rot,
@@ -59,21 +65,14 @@ AttentionBlock::AttentionBlock(Graph* graph, std::shared_ptr<Tensor> input,
                                         model_config.compt_type, device);
     m_vstorage = make_unique<KvStorage>(std::vector<size_t>{nr_ctx, embd},
                                         model_config.compt_type, device);
-    //! LayerNorm
-    auto inputs = add_opr<LayerNorm>(device, name + "_norm", OpIOs{input},
-                                     m_embd, true);
     //! kqv-matmul
     auto v_out =
-            add_opr<Attention>(device, name, inputs, embd, rot, nr_ctx, head,
-                               m_kstorage.get(), m_vstorage.get())[0];
+            add_opr<Attention>(device, name, OpIOs{input}, embd, rot, nr_ctx,
+                               head, m_kstorage.get(), m_vstorage.get())[0];
     //! matmul proj
     auto proj_out = add_opr<MatMul>(device, name + ".wo", OpIOs{v_out},
                                     std::vector<size_t>{embd, embd})[0];
-    //! elemwise add
-    auto output =
-            add_opr<Elemwise>(device, name + ":Elemwise",
-                              OpIOs{this->input(), proj_out}, ElemMode::Add)[0];
-    set_output(output);
+    set_output(proj_out);
 }
 
 FeedForwardBlock::FeedForwardBlock(Graph* graph, std::shared_ptr<Tensor> input,
@@ -82,16 +81,13 @@ FeedForwardBlock::FeedForwardBlock(Graph* graph, std::shared_ptr<Tensor> input,
                                    const std::string& name)
         : OprBlockBase(input, device, name), m_embd(embd), m_graph(graph) {
     size_t nff = ((2 * (4 * embd) / 3 + mult - 1) / mult) * mult;
-    //! LayerNorm
-    auto norm_out = add_opr<LayerNorm>(device, name + ".ffn_norm", OpIOs{input},
-                                       m_embd, true)[0];
     //! matmul0
     auto matmul_out0 =
-            add_opr<MatMul>(device, name + ".feed_forward.w3", OpIOs{norm_out},
+            add_opr<MatMul>(device, name + ".feed_forward.w3", OpIOs{input},
                             std::vector<size_t>{nff, embd})[0];
     //! matmul1
     auto matmul_out1 =
-            add_opr<MatMul>(device, name + ".feed_forward.w1", OpIOs{norm_out},
+            add_opr<MatMul>(device, name + ".feed_forward.w1", OpIOs{input},
                             std::vector<size_t>{nff, embd})[0];
     //! silu activation
     auto silu_out = add_opr<Elemwise>(device, name + "_silu",
@@ -104,11 +100,7 @@ FeedForwardBlock::FeedForwardBlock(Graph* graph, std::shared_ptr<Tensor> input,
     auto matmul_out2 =
             add_opr<MatMul>(device, name + ".feed_forward.w2", OpIOs{mul_out},
                             std::vector<size_t>{embd, nff})[0];
-    //! elemwise add
-    auto output = add_opr<Elemwise>(device, name + "_add",
-                                    OpIOs{this->input(), matmul_out2},
-                                    ElemMode::Add)[0];
-    set_output(output);
+    set_output(matmul_out2);
 }
 
 HeadBlock::HeadBlock(Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd,
@@ -145,6 +137,24 @@ EmbdBlock::EmbdBlock(Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd,
                                        model_config.compt_type, device,
                                        "tok_embeddings")[0];
     set_output(embd_out);
+}
+
+ElemwiseAddBlock::ElemwiseAddBlock(Graph* graph,
+                                   std::vector<std::shared_ptr<Tensor>> inputs,
+                                   Device* device, const std::string& name)
+        : OprBlockBase(inputs, device, name), m_graph(graph) {
+    auto output =
+            add_opr<Elemwise>(device, name + "_add", inputs, ElemMode::Add)[0];
+    set_output(output);
+}
+
+LayerNormBlock::LayerNormBlock(Graph* graph, std::shared_ptr<Tensor> input,
+                               Device* device, const std::string& name,
+                               uint32_t embd)
+        : OprBlockBase(input, device, name), m_graph(graph) {
+    auto norm_out = add_opr<LayerNorm>(device, name, OpIOs{input},
+                                       embd, true)[0];
+    set_output(norm_out);
 }
 
 //! Graph
