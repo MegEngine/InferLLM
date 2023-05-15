@@ -169,9 +169,9 @@ int main(int argc, char** argv) {
             fflush(stdout);
 
             // token 2 is the end of the instruction
-            if (token == 2) {
+            if (output.empty() || output.back() == 0 || token == 2) {
                 printf("\n");
-                printf("[end txt]");
+                printf("[end of text]");
                 is_interacting = true;
             }
             output.clear();
