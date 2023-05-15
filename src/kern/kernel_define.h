@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <vector>
 
+#define PI (3.1415)
+#define PGELU (0.044715)
 #define INFER_ATTRIBUTE_TARGET(simd)   __attribute__((target(simd)))
 namespace inferllm {
 
@@ -31,6 +33,7 @@ enum class ElemMode {
     Add = 0,
     Mul,
     Silu,
+    Gelu,
 };
 
 enum class RotMode {

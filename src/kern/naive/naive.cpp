@@ -59,6 +59,19 @@ TaskSet llm_elemwise_compute_float(InData<float> srcs, float* dst, size_t len,
             };
             break;
         }
+        case ElemMode::Gelu: {
+            task = [=](const TaskId& id) {
+                const float* src0 = srcs[0];
+                for (size_t i = id.start; i < id.end; i++) {
+                    float src = src0[i];
+                    dst[i] = 0.5 * src *
+                             (1 + tanh(sqrt(2.0 / PI) *
+                                       (src + PGELU * src * src * src)));
+                }
+                return;
+            };
+            break;
+        }
         default:
             INFER_ASSERT(0, "Not supported.");
     }
@@ -190,9 +203,9 @@ TaskSet llm_softmax_compute_float(const float* src, float* dst,
 
 // compute the softmax of the last dim of src, and store the result in dst
 TaskSet llm_matmul_compute_int4_float(float* dst, const void* src0,
-                                      const float* src1, uint32_t M, uint32_t N,
-                                      uint32_t K, void* workspace,
-                                      uint32_t size) {
+                                      const float* bias, const float* src1,
+                                      uint32_t M, uint32_t N, uint32_t K,
+                                      void* workspace, uint32_t size) {
     //! src0 is quantized weights, weights store in 32 data as block and a block
     //! share the same scale, src1 is featureMap. src0 layout is {N,
     //! K}, src1 layout is {M, K}, the dst is {M, N}
@@ -216,9 +229,12 @@ TaskSet llm_matmul_compute_int4_float(float* dst, const void* src0,
         for (uint32_t n = id.start; n < id.end; n++) {
             const void* q_weight =
                     static_cast<const uint8_t*>(src0) + n * weight_q40_stride;
+            float b = bias ? bias[n] : 0.0f;
             for (uint32_t m = 0; m < M; m++) {
                 int8_t* src = q_src + m * weight_q80_stride;
-                dst[m * N + n] = vec_vec_dot_q40_with_q80_reference(K, q_weight, src);
+                dst[m * N + n] =
+                        vec_vec_dot_q40_with_q80_reference(K, q_weight, src) +
+                        b;
             }
         }
     };

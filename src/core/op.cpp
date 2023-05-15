@@ -5,23 +5,40 @@
 using namespace inferllm;
 
 void LayerNorm::execute(WorkSpace* workspace, uint32_t nr_past) {
-    auto weight = weights()[0];
+    std::shared_ptr<Tensor> weight = nullptr, bias = nullptr;
+    if (m_mul) {
+        weight = weights()[0];
+        DType weight_type = weight->dtype();
+        INFER_ASSERT(weight_type == DType::Float32,
+                     "layer norm weights must be float32.");
+    }
+    if (m_bias) {
+        bias = weights()[1];
+    }
     auto input = inputs()[0];
     auto output = outputs()[0];
     uint32_t seq_len = input->shape()[0];
     uint32_t embd = input->shape()[1];
-    DType weight_type = weight->dtype();
-    INFER_ASSERT(weight_type == DType::Float32,
-                 "layer norm weights must be float32.");
     auto kernel = get_kernel();
     if (input->dtype() == DType::Float32) {
         const float* src = input->ptr<float>();
         float* dst = output->ptr<float>();
-        float* weight_ptr = weight->ptr<float>();
+        float *weight_ptr = nullptr, *bias_ptr = nullptr;
+        if (m_mul) {
+            weight_ptr = weight->ptr<float>();
+        }
+        if (m_bias) {
+            bias_ptr = bias->ptr<float>();
+        }
         kernel->operator()<KernelID::RmsNormFloat>(src, dst, seq_len, embd);
-        kernel->operator()<KernelID::ElemwiseBroadcastDim0Src1Float>(
-                dst, weight_ptr, dst, seq_len, embd,
-                ElemMode::Mul);
+        if (weight_ptr) {
+            kernel->operator()<KernelID::ElemwiseBroadcastDim0Src1Float>(
+                    dst, weight_ptr, dst, seq_len, embd, ElemMode::Mul);
+        }
+        if (bias_ptr) {
+            kernel->operator()<KernelID::ElemwiseBroadcastDim0Src1Float>(
+                    dst, bias_ptr, dst, seq_len, embd, ElemMode::Add);
+        }
     }
 }
 
@@ -62,13 +79,17 @@ void Elemwise::execute(WorkSpace*, uint32_t) {
     auto output = outputs()[0];
     auto kernel = get_kernel();
     if (output->dtype() == DType::Float32) {
-        InData<float> in_datas;
-        for (auto input : inputs()) {
-            in_datas.push_back(input->ptr<float>());
+        if (m_scale == -INFINITY) {
+            InData<float> in_datas;
+            for (auto input : inputs()) {
+                in_datas.push_back(input->ptr<float>());
+            }
+            float* dst = output->ptr<float>();
+            size_t len = output->length();
+            kernel->operator()<KernelID::ElemwiseFloat>(in_datas, dst, len,
+                                                        m_mode);
+        } else {
         }
-        float* dst = output->ptr<float>();
-        size_t len = output->length();
-        kernel->operator()<KernelID::ElemwiseFloat>(in_datas, dst, len, m_mode);
     } else {
         //! fp16
     }
@@ -86,9 +107,13 @@ void MatMul::execute(WorkSpace* workspace, uint32_t) {
     if (src_dtype == DType::Float32 && weight_dtype == DType::Int4) {
         float* dst = outputs()[0]->ptr<float>();
         const void* weight = weights()[0]->ptr();
+        const float* bias = nullptr;
+        if (m_bias) {
+            bias = weights()[1]->ptr<float>();
+        }
         const float* src = inputs()[0]->ptr<float>();
         kernel->operator()<KernelID::MatmulInt4Float>(
-                dst, weight, src, M, N, K, p_workspace, p_workspace_size);
+                dst, weight, bias, src, M, N, K, p_workspace, p_workspace_size);
     } 
 }
 
@@ -119,9 +144,13 @@ void MatMulLast::execute(WorkSpace* workspace, uint32_t) {
     if (src_dtype == DType::Float32 && weight_dtype == DType::Int4) {
         float* dst = outputs()[0]->ptr<float>();
         const void* weight = weights()[0]->ptr();
+        const float* bias = nullptr;
+        if (m_bias) {
+            bias = weights()[1]->ptr<float>();
+        }
         const float* src = inputs()[0]->ptr<float>() + (row - 1) * K;
         kernel->operator()<KernelID::MatmulInt4Float>(
-                dst, weight, src, M, N, K, p_workspace, p_workspace_size);
+                dst, weight, bias, src, M, N, K, p_workspace, p_workspace_size);
     } 
 }
 
@@ -138,91 +167,45 @@ size_t MatMulLast::get_workspace_in_byte() {
     return 0;
 }
 
-void MatMulNoWeight::execute(WorkSpace* workspace, uint32_t) {
-   
-}
-
-size_t MatMulNoWeight::get_workspace_in_byte() {
-    return 0;
-}
-
-void MatMulCacheKv::execute(WorkSpace* workspace, uint32_t nr_past) {
-    auto weight_q = weights()[0];
-    auto weight_k = weights()[1];
-    auto weight_v = weights()[2];
-    INFER_ASSERT(nr_past == m_kstorage->current_index(),
-                 "The index in kv storage is not the same as input\n");
-
-    void* p_wq = weight_q->ptr();
-    void* p_wk = weight_k->ptr();
-    void* p_wv = weight_v->ptr();
-
-    auto w_dtype = weight_q->dtype();
-    auto out_q = outputs()[1];
-    auto input = inputs()[0];
-    auto in_dtype = input->dtype();
-
-    uint32_t M = input->shape()[0];
-    uint32_t K = input->shape()[1];
-    uint32_t N = weight_q->shape()[0];
-
-    void* p_work = workspace->ptr();
-    uint32_t size = workspace->length();
-    auto kernel = get_kernel();
-
-    //! compute k, q, v
-    if (w_dtype == DType::Int4 && in_dtype == DType::Float32) {
-        const float* pdata = input->ptr<float>();
-        float* p_outk = static_cast<float*>(m_kstorage->get_current_data());
-        float* p_outv = static_cast<float*>(m_vstorage->get_current_data());
-        float* p_outq = static_cast<float*>(out_q->ptr());
-        kernel->operator()<KernelID::MatmulInt4Float>(p_outq, p_wq, pdata, M, N,
-                                                      K, p_work, size);
-        kernel->operator()<KernelID::MatmulInt4Float>(p_outk, p_wk, pdata, M, N,
-                                                      K, p_work, size);
-        kernel->operator()<KernelID::MatmulInt4Float>(p_outv, p_wv, pdata, M, N,
-                                                      K, p_work, size);
-    }
-}
-
-size_t MatMulCacheKv::get_workspace_in_byte() {
-    uint32_t M = inputs()[0]->shape()[0];
-    uint32_t K = inputs()[0]->shape()[1];
-    uint32_t N = weights()[0]->shape()[0];
-    auto src_dtype = inputs()[1]->dtype();
-    auto kernel = get_kernel();
-    if (src_dtype == DType::Float32) {
-        return kernel->get_workspace<KernelID::MatmulInt4Float>(
-                kernel->nr_thread(), M, N, K);
-    }
-    return 0;
-}
-
 void Attention::execute(WorkSpace* workspace, uint32_t nr_past) {
-    auto weight_q = weights()[0];
-    auto weight_k = weights()[1];
-    auto weight_v = weights()[2];
     INFER_ASSERT(nr_past == m_kstorage->current_index(),
                  "The index in kv storage is not the same as input\n");
-
-    auto kernel = get_kernel();
-    void* p_wq = weight_q->ptr();
-    void* p_wk = weight_k->ptr();
-    void* p_wv = weight_v->ptr();
-
-    auto w_dtype = weight_q->dtype();
+    auto w_dtype = weights()[0]->dtype();
     auto out = outputs()[0];
     auto input = inputs()[0];
     auto in_dtype = input->dtype();
-
     uint32_t seqlen = input->shape()[0];
     uint32_t embd = input->shape()[1];
     uint32_t head = m_head;
+    auto kernel = get_kernel();
+
+    void *p_wq = nullptr, *p_wk = nullptr, *p_wv = nullptr;
+    float *p_bq = nullptr, *p_bk = nullptr, *p_bv = nullptr;
+    if (m_fused_weights) {
+        size_t offset = embd * embd * dtype_in_byte(w_dtype) /
+                        dtype_block_size(w_dtype);
+        p_wq = weights()[0]->ptr();
+        p_wk = static_cast<int8_t*>(p_wq) + offset;
+        p_wv = static_cast<int8_t*>(p_wk) + offset;
+        if (m_bias) {
+            p_bq = weights()[1]->ptr<float>();
+            p_bk = p_bq + embd;
+            p_bv = p_bk + embd;
+        }
+    } else {
+        p_wq = weights()[0]->ptr();
+        p_wk = weights()[1]->ptr();
+        p_wv = weights()[2]->ptr();
+        if (m_bias) {
+            p_bq = weights()[3]->ptr<float>();
+            p_bk = weights()[4]->ptr<float>();
+            p_bv = weights()[5]->ptr<float>();
+        }
+    }
 
     void* p_work = workspace->ptr();
     uint32_t matmul_size = kernel->get_workspace<KernelID::MatmulInt4Float>(
-            kernel->nr_thread(), seqlen, embd,
-            static_cast<uint32_t>(weight_q->shape()[0]));
+            kernel->nr_thread(), seqlen, embd, embd);
     uint32_t size = workspace->length();
 
     void* q_out = static_cast<void*>(static_cast<char*>(p_work) + matmul_size);
@@ -236,12 +219,15 @@ void Attention::execute(WorkSpace* workspace, uint32_t nr_past) {
         float* p_outv = static_cast<float*>(m_vstorage->get_current_data());
         float* p_outq = static_cast<float*>(q_out);
         if (w_dtype == DType::Int4) {
-            kernel->operator()<KernelID::MatmulInt4Float>(
-                    p_outq, p_wq, pdata, seqlen, embd, embd, p_work, size);
-            kernel->operator()<KernelID::MatmulInt4Float>(
-                    p_outk, p_wk, pdata, seqlen, embd, embd, p_work, size);
-            kernel->operator()<KernelID::MatmulInt4Float>(
-                    p_outv, p_wv, pdata, seqlen, embd, embd, p_work, size);
+            kernel->operator()<KernelID::MatmulInt4Float>(p_outq, p_wq, p_bq,
+                                                          pdata, seqlen, embd,
+                                                          embd, p_work, size);
+            kernel->operator()<KernelID::MatmulInt4Float>(p_outk, p_wk, p_bk,
+                                                          pdata, seqlen, embd,
+                                                          embd, p_work, size);
+            kernel->operator()<KernelID::MatmulInt4Float>(p_outv, p_wv, p_bv,
+                                                          pdata, seqlen, embd,
+                                                          embd, p_work, size);
         }
         //! rope Q
         kernel->operator()<KernelID::RopeFloat>(p_outq, p_outq, nr_past, m_rot,
@@ -296,22 +282,6 @@ size_t Attention::get_workspace_in_byte() {
     return total;
 }
 
-void Rope::execute(WorkSpace* workspace, uint32_t nr_past) {
-    auto output = outputs()[0];
-    uint32_t N = output->shape()[0];
-    uint32_t head = output->shape()[1];
-    uint32_t embd = output->shape()[2];
-    auto kernel = get_kernel();
-    if (output->dtype() == DType::Float32) {
-        const float* in_data = inputs()[0]->ptr<float>();
-        float* dst = output->ptr<float>();
-        kernel->operator()<KernelID::RopeFloat>(dst, in_data, nr_past, m_rot,
-                                                m_mode, N, head, embd);
-    } else {
-        //! fp16
-    }
-}
-
 void DiagMask::execute(WorkSpace*, uint32_t n_past) {
     auto output = outputs()[0];
     uint32_t head = output->shape()[0];
@@ -322,23 +292,6 @@ void DiagMask::execute(WorkSpace*, uint32_t n_past) {
         float* dst = output->ptr<float>();
         kernel->operator()<KernelID::DiagMaskFloat>(dst, in_data, n_past, N,
                                                     head);
-    } else {
-        //! fp16
-    }
-}
-
-void Permute::execute(WorkSpace* workspace, uint32_t nr_past) {
-    auto output = outputs()[0];
-    auto input = inputs()[0];
-    auto kernel = get_kernel();
-    uint32_t dim0 = input->shape()[0];
-    uint32_t dim1 = input->shape()[1];
-    uint32_t dim2 = input->shape()[2];
-    if (output->dtype() == DType::Float32) {
-        const float* in_data = inputs()[0]->ptr<float>();
-        float* dst = output->ptr<float>();
-        kernel->operator()<KernelID::PermuteFloat>(dst, in_data, dim0, dim1,
-                                                   dim2, m_param);
     } else {
         //! fp16
     }

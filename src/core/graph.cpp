@@ -3,16 +3,17 @@
 #include <fstream>
 #include <vector>
 #include <sys/time.h>
+#include <regex>
 
 using namespace inferllm;
 
-void OprBlockBase::deduce_output_shape() {
+void OprModuleBase::deduce_output_shape() {
     for (auto opr : m_oprs) {
         opr->deduce_output_shape();
     }
 }
 
-void OprBlockBase::execute(WorkSpace* workspace, uint32_t nr_past, bool) {
+void OprModuleBase::execute(WorkSpace* workspace, uint32_t nr_past, bool) {
     for (auto opr : m_oprs) {
         opr->pre_execute();
 #ifdef INFER_PROFILE
@@ -31,7 +32,7 @@ void OprBlockBase::execute(WorkSpace* workspace, uint32_t nr_past, bool) {
     }
 }
 
-size_t OprBlockBase::get_workspace_in_byte() {
+size_t OprModuleBase::get_workspace_in_byte() {
     size_t max_workspace = 0;
     for (auto opr : m_oprs) {
         size_t workspace = opr->get_workspace_in_byte();
@@ -40,21 +41,22 @@ size_t OprBlockBase::get_workspace_in_byte() {
     return max_workspace;
 }
 
-OprBlockBase::OprBlockBase(std::shared_ptr<Tensor> input, Device* device,
+OprModuleBase::OprModuleBase(std::shared_ptr<Tensor> input, Device* device,
                            const std::string& name)
         : m_name(name), m_device(device) {
     m_inputs.push_back(input);
 }
 
-OprBlockBase::OprBlockBase(std::vector<std::shared_ptr<Tensor>> inputs,
+OprModuleBase::OprModuleBase(std::vector<std::shared_ptr<Tensor>> inputs,
                            Device* device, const std::string& name)
         : m_name(name), m_device(device), m_inputs(inputs) {}
 
-AttentionBlock::AttentionBlock(Graph* graph, std::shared_ptr<Tensor> input,
-                               uint32_t embd, uint32_t head, uint32_t rot,
-                               uint32_t nr_ctx, UserConfig model_config,
-                               Device* device, const std::string& name)
-        : OprBlockBase(input, device, name),
+AttentionModule::AttentionModule(Graph* graph, std::shared_ptr<Tensor> input,
+                                 uint32_t embd, uint32_t head, uint32_t rot,
+                                 uint32_t nr_ctx, UserConfig model_config,
+                                 Device* device, const std::string& name,
+                                 bool fused_weights, bool bias, bool rotary)
+        : OprModuleBase(input, device, name),
           m_embd(embd),
           m_head(head),
           m_rot(rot),
@@ -66,58 +68,74 @@ AttentionBlock::AttentionBlock(Graph* graph, std::shared_ptr<Tensor> input,
     m_vstorage = make_unique<KvStorage>(std::vector<size_t>{nr_ctx, embd},
                                         model_config.compt_type, device);
     //! kqv-matmul
-    auto v_out =
-            add_opr<Attention>(device, name, OpIOs{input}, embd, rot, nr_ctx,
-                               head, m_kstorage.get(), m_vstorage.get())[0];
+    auto v_out = add_opr<Attention>(
+            device, name, OpIOs{input}, embd, rot, nr_ctx, head,
+            m_kstorage.get(), m_vstorage.get(), fused_weights, bias, rotary)[0];
     //! matmul proj
     auto proj_out = add_opr<MatMul>(device, name + ".wo", OpIOs{v_out},
-                                    std::vector<size_t>{embd, embd})[0];
+                                    std::vector<size_t>{embd, embd}, bias)[0];
     set_output(proj_out);
 }
 
-FeedForwardBlock::FeedForwardBlock(Graph* graph, std::shared_ptr<Tensor> input,
+LlamaFFNModule::LlamaFFNModule(Graph* graph, std::shared_ptr<Tensor> input,
                                    uint32_t embd, uint32_t mult,
                                    UserConfig model_config, Device* device,
                                    const std::string& name)
-        : OprBlockBase(input, device, name), m_embd(embd), m_graph(graph) {
+        : OprModuleBase(input, device, name), m_embd(embd), m_graph(graph) {
     size_t nff = ((2 * (4 * embd) / 3 + mult - 1) / mult) * mult;
     //! matmul0
-    auto matmul_out0 =
-            add_opr<MatMul>(device, name + ".feed_forward.w3", OpIOs{input},
-                            std::vector<size_t>{nff, embd})[0];
+    auto matmul_out0 = add_opr<MatMul>(device, name + ".ffn.w3", OpIOs{input},
+                                       std::vector<size_t>{nff, embd})[0];
     //! matmul1
-    auto matmul_out1 =
-            add_opr<MatMul>(device, name + ".feed_forward.w1", OpIOs{input},
-                            std::vector<size_t>{nff, embd})[0];
+    auto matmul_out1 = add_opr<MatMul>(device, name + ".ffn.w1", OpIOs{input},
+                                       std::vector<size_t>{nff, embd})[0];
     //! silu activation
-    auto silu_out = add_opr<Elemwise>(device, name + "_silu",
+    auto silu_out = add_opr<Elemwise>(device, name + ".silu",
                                       OpIOs{matmul_out1}, ElemMode::Silu)[0];
     //! elemwise mul
     auto mul_out =
-            add_opr<Elemwise>(device, name + "_elemwise",
+            add_opr<Elemwise>(device, name + ".elemwise",
                               OpIOs{silu_out, matmul_out0}, ElemMode::Mul)[0];
     //! matmul2
-    auto matmul_out2 =
-            add_opr<MatMul>(device, name + ".feed_forward.w2", OpIOs{mul_out},
-                            std::vector<size_t>{embd, nff})[0];
+    auto matmul_out2 = add_opr<MatMul>(device, name + ".ffn.w2", OpIOs{mul_out},
+                                       std::vector<size_t>{embd, nff})[0];
     set_output(matmul_out2);
 }
 
-HeadBlock::HeadBlock(Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd,
+GlmFFNModule::GlmFFNModule(Graph* graph, std::shared_ptr<Tensor> input,
+                           uint32_t embd, uint32_t mult,
+                           UserConfig model_config, Device* device,
+                           const std::string& name)
+        : OprModuleBase(input, device, name), m_embd(embd), m_graph(graph) {
+    //! matmul0
+    auto matmul_out1 =
+            add_opr<MatMul>(device, name + ".ffn.matmul1", OpIOs{input},
+                            std::vector<size_t>{mult, embd}, true)[0];
+    //! gelu activation
+    auto gelu_out = add_opr<Elemwise>(device, name + ".gelu",
+                                      OpIOs{matmul_out1}, ElemMode::Gelu)[0];
+    //! matmul2
+    auto matmul_out2 =
+            add_opr<MatMul>(device, name + ".ffn.matmul2", OpIOs{gelu_out},
+                            std::vector<size_t>{embd, mult}, true)[0];
+    set_output(matmul_out2);
+}
+
+HeadModule::HeadModule(Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd,
                      uint32_t vocab, UserConfig model_config, Device* device,
-                     const std::string& name)
-        : OprBlockBase(input, device, name), m_embd(embd), m_graph(graph) {
+                     const std::string& name, bool bias)
+        : OprModuleBase(input, device, name), m_embd(embd), m_graph(graph) {
     //! LayerNorm
-    auto norm_out = add_opr<LayerNorm>(device, name + "norm", OpIOs{input},
-                                       m_embd, true)[0];
+    auto norm_out = add_opr<LayerNorm>(device, name + ".norm", OpIOs{input},
+                                       m_embd, true, bias)[0];
     //! matmul
     auto matmul_out =
-            add_opr<MatMulLast>(device, name + "output", OpIOs{norm_out},
+            add_opr<MatMulLast>(device, name + ".output", OpIOs{norm_out},
                                 std::vector<size_t>{vocab, embd})[0];
     set_output(matmul_out);
 }
 
-void HeadBlock::execute(WorkSpace* workspace, uint32_t nr_past,
+void HeadModule::execute(WorkSpace* workspace, uint32_t nr_past,
                         bool is_prefill) {
     //! prefill is no need to execute
     if (!is_prefill) {
@@ -129,32 +147,14 @@ void HeadBlock::execute(WorkSpace* workspace, uint32_t nr_past,
     }
 }
 
-EmbdBlock::EmbdBlock(Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd,
+EmbdModule::EmbdModule(Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd,
                      uint32_t vocab, UserConfig model_config, Device* device,
                      const std::string& name)
-        : OprBlockBase(input, device, name), m_embd(embd), m_graph(graph) {
+        : OprModuleBase(input, device, name), m_embd(embd), m_graph(graph) {
     auto embd_out = add_opr<Embedding>(OpIOs{input}, embd, vocab,
                                        model_config.compt_type, device,
                                        "tok_embeddings")[0];
     set_output(embd_out);
-}
-
-ElemwiseAddBlock::ElemwiseAddBlock(Graph* graph,
-                                   std::vector<std::shared_ptr<Tensor>> inputs,
-                                   Device* device, const std::string& name)
-        : OprBlockBase(inputs, device, name), m_graph(graph) {
-    auto output =
-            add_opr<Elemwise>(device, name + "_add", inputs, ElemMode::Add)[0];
-    set_output(output);
-}
-
-LayerNormBlock::LayerNormBlock(Graph* graph, std::shared_ptr<Tensor> input,
-                               Device* device, const std::string& name,
-                               uint32_t embd)
-        : OprBlockBase(input, device, name), m_graph(graph) {
-    auto norm_out = add_opr<LayerNorm>(device, name, OpIOs{input},
-                                       embd, true)[0];
-    set_output(norm_out);
 }
 
 //! Graph
@@ -162,9 +162,9 @@ LayerNormBlock::LayerNormBlock(Graph* graph, std::shared_ptr<Tensor> input,
 
 size_t Graph::get_workspace_in_byte() {
     size_t max_workspace = 0;
-    for (size_t i = 0; i < m_blocks.size(); i++) {
-        m_blocks[i]->deduce_output_shape();
-        size_t workspace = m_blocks[i]->get_workspace_in_byte();
+    for (size_t i = 0; i < m_modules.size(); i++) {
+        m_modules[i]->deduce_output_shape();
+        size_t workspace = m_modules[i]->get_workspace_in_byte();
         max_workspace = workspace > max_workspace ? workspace : max_workspace;
     }
     return max_workspace;
@@ -190,14 +190,68 @@ void Graph::execute(std::vector<int32_t> in_token, std::vector<float>& logist,
                  "output length is not match with logist size");
     m_output->set_shared_memory(logist.data(), logist.size() * sizeof(float));
 
-    for (size_t i = 0; i < m_blocks.size(); i++) {
-        m_blocks[i]->execute(m_workspace.get(), nr_past, prefill);
+    for (size_t i = 0; i < m_modules.size(); i++) {
+        m_modules[i]->execute(m_workspace.get(), nr_past, prefill);
     }
 }
 
 void Graph::reset_ctx() {
-    for (size_t i = 0; i < m_blocks.size(); i++) {
-        m_blocks[i]->reset_ctx();
+    for (size_t i = 0; i < m_modules.size(); i++) {
+        m_modules[i]->reset_ctx();
+    }
+}
+
+void Graph::collect_weights() {
+    //! collect all the weights
+    for (auto module : m_modules) {
+        auto all_weights = module->get_all_weights();
+        for (auto weight : all_weights) {
+            std::string name = weight->name();
+            INFER_ASSERT(m_weights_map.count(name) == 0, "dumplicated weight.");
+            m_weights_map[name] = weight;
+        }
+    }
+}
+
+DType Graph::convert_dtype(int32_t type) {
+    switch (type) {
+        case 0:
+            return DType::Float32;
+        case 1:
+            return DType::Float16;
+        case 2:
+            return DType::Int4;
+        case 3:
+            return DType::Uint4;
+        default:
+            INFER_ASSERT(0, "unsupported weight type");
+    }
+};
+
+std::string Graph::get_weight_alias(const std::string& name) {
+    std::regex reg_get("\\.(\\d+)\\.");
+    std::smatch match;
+    //! if find in map directly
+    if (m_weights_name_aliases.find(name) != m_weights_name_aliases.end()) {
+        return m_weights_name_aliases[name];
+        //! if matmul "xxx.[layer_num].xxx"
+    } else if (std::regex_search(name, match, reg_get)) {
+        auto layer_num = match[1].str();
+        std::regex reg_replace("\\.\\d+\\.");
+        std::string reg_name = regex_replace(name, reg_replace, ".x.");
+        //! if "aaa.x.bbbb" is found
+        if (m_weights_name_aliases.find(reg_name) !=
+            m_weights_name_aliases.end()) {
+            auto tmp_alias = m_weights_name_aliases[reg_name];
+            //! replace "cccc.x.dddd" to "cccc.[layer_num].dddd"
+            std::regex regx("\\.x\\.");
+            return regex_replace(tmp_alias, regx, "." + layer_num + ".");
+        } else {
+            return name;
+        }
+        //! return origin
+    } else {
+        return name;
     }
 }
 

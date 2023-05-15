@@ -49,7 +49,7 @@ set_target_properties(InferLLMShared PROPERTIES PUBLIC_HEADER ${CMAKE_SOURCE_DIR
 target_include_directories(InferLLM PUBLIC include src)
 target_include_directories(InferLLMShared PUBLIC include src)
 
-set(CMAKE_CXX_FLAGS " -std=c++11 -pthread ${CMAKE_CXX_FLAGS}")
+set(CMAKE_CXX_FLAGS " -std=c++11 -pthread -Wno-multichar ${CMAKE_CXX_FLAGS}")
 
 if(CMAKE_BUILD_TYPE MATCHES "Debug")
   set(CMAKE_CXX_FLAGS " -g -O0 ${CMAKE_CXX_FLAGS}")

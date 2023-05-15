@@ -24,12 +24,12 @@ struct app_params {
     float temp = 0.10f;
     float repeat_penalty = 1.30f;
 
-    std::string model = "ggml-alpaca-7b-q4.bin";  // model path
+    std::string model ;  // model path
 
     bool use_color = true;  // use color to distinguish generations and inputs
     bool use_mmap = false;  // use mmap to load model
     std::string dtype = "float32";  // configure the compute dtype
-    std::string mtype = "llama";  // the model type name, llama
+    std::string mtype = "chatglm";  // the model type name, llama
 };
 
 void app_print_usage(int argc, char ** argv, const app_params & params) {
@@ -120,14 +120,6 @@ int main(int argc, char** argv) {
     model->init(params.top_k, params.top_p, params.temp, params.repeat_penalty,
                 params.repeat_last_n, params.seed);
 
-    std::string instruct_inp =
-            " Below is an instruction that describes a task. Write a response "
-            "that appropriately completes the request.\n\n";
-    std::string prompt_inp = "### Instruction:\n\n";
-    std::string response_inp = "### Response:\n\n";
-
-
-
     // print the basic parameters
     fprintf(stderr, "%s: interactive mode on.\n", __func__);
     fprintf(stderr,
@@ -147,8 +139,6 @@ int main(int argc, char** argv) {
 #endif
             " - If you want to submit another line, end your input in "
             "'\\'.\n");
-    // prefill the model with the prompt
-    model->prefill(instruct_inp);
 
     // prompt user immediately after the starting prompt has been loaded
     bool is_interacting = true;
@@ -178,7 +168,6 @@ int main(int argc, char** argv) {
             // after answering the question, get the user input again
         } else {
             printf("\n> ");
-            user_input += prompt_inp;
             bool another_line = true;
             while (another_line) {
                 fflush(stdout);
@@ -205,7 +194,6 @@ int main(int argc, char** argv) {
                 }
                 user_input += input;
             }
-            user_input += response_inp;
         }
     }
 

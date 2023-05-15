@@ -25,12 +25,12 @@ struct UserConfig {
 
 class Graph;
 
-class OprBlockBase {
+class OprModuleBase {
 public:
-    OprBlockBase(std::shared_ptr<Tensor> input, Device* device,
+    OprModuleBase(std::shared_ptr<Tensor> input, Device* device,
                  const std::string& name);
 
-    OprBlockBase(std::vector<std::shared_ptr<Tensor>> inputs, Device* device,
+    OprModuleBase(std::vector<std::shared_ptr<Tensor>> inputs, Device* device,
                  const std::string& name);
     size_t get_workspace_in_byte();
     void deduce_output_shape();
@@ -55,6 +55,7 @@ public:
         return all_weights;
     }
 
+    std::vector<std::shared_ptr<Tensor>> inputs() const { return m_inputs; };
     std::shared_ptr<Tensor> input(int id = 0) const { return m_inputs[id]; };
     std::shared_ptr<Tensor> output() const { return m_output; };
 
@@ -63,9 +64,11 @@ public:
 
     std::string name() const { return m_name; }
 
+    Device* device() const { return m_device; }
+
     virtual void reset_ctx() {}
 
-    std::vector<std::shared_ptr<OpBase>> oprs() { return m_oprs; }
+    std::vector<std::shared_ptr<OpBase>>& oprs() { return m_oprs; }
 
 private:
     std::string m_name;
@@ -75,12 +78,13 @@ private:
     std::vector<std::shared_ptr<OpBase>> m_oprs;
 };
 
-class AttentionBlock : public OprBlockBase {
+class AttentionModule : public OprModuleBase {
 public:
-    AttentionBlock(Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd,
-                   uint32_t head, uint32_t n_rot, uint32_t n_ctx,
-                   UserConfig model_config, Device* device,
-                   const std::string& name);
+    AttentionModule(Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd,
+                    uint32_t head, uint32_t n_rot, uint32_t n_ctx,
+                    UserConfig model_config, Device* device,
+                    const std::string& name, bool fused_weights = false,
+                    bool bias = false, bool rotary = false);
 
     void reset_ctx() override {
         m_kstorage->reset_id();
@@ -98,9 +102,9 @@ private:
     std::unique_ptr<KvStorage> m_vstorage;
 };
 
-class FeedForwardBlock : public OprBlockBase {
+class LlamaFFNModule : public OprModuleBase {
 public:
-    FeedForwardBlock(Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd,
+    LlamaFFNModule(Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd,
                      uint32_t mult, UserConfig model_config,
                      Device* device, const std::string& name);
 
@@ -109,11 +113,22 @@ private:
     Graph* m_graph;
 };
 
-class HeadBlock : public OprBlockBase {
+class GlmFFNModule : public OprModuleBase {
 public:
-    HeadBlock(Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd,
-              uint32_t vocab, UserConfig model_config, Device* device,
-              const std::string& name);
+    GlmFFNModule(Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd,
+                     uint32_t mult, UserConfig model_config,
+                     Device* device, const std::string& name);
+
+private:
+    uint32_t m_embd;
+    Graph* m_graph;
+};
+
+class HeadModule : public OprModuleBase {
+public:
+    HeadModule(Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd,
+               uint32_t vocab, UserConfig model_config, Device* device,
+               const std::string& name, bool bias = false);
 
     void execute(WorkSpace* workspace, uint32_t nr_past,
                  bool is_prefill = false) override;
@@ -124,9 +139,9 @@ private:
     Graph* m_graph;
 };
 
-class EmbdBlock : public OprBlockBase {
+class EmbdModule : public OprModuleBase {
 public:
-    EmbdBlock(Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd,
+    EmbdModule(Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd,
               uint32_t vocab, UserConfig model_config, Device* device,
               const std::string& name);
 
@@ -136,19 +151,22 @@ private:
     Graph* m_graph;
 };
 
-class ElemwiseAddBlock : public OprBlockBase {
+template <class Op>
+class OneOpModule : public OprModuleBase {
 public:
-    ElemwiseAddBlock(Graph* graph, std::vector<std::shared_ptr<Tensor>> inputs,
-                     Device* device, const std::string& name);
+    OneOpModule(Graph* graph,
+                const std::vector<std::shared_ptr<Tensor>>& inputs,
+                Device* device, const std::string& name)
+            : OprModuleBase(inputs, device, name), m_graph(graph) {}
 
-private:
-    Graph* m_graph;
-};
-
-class LayerNormBlock : public OprBlockBase {
-public:
-    LayerNormBlock(Graph* graph, std::shared_ptr<Tensor> input, Device* device,
-                   const std::string& name, uint32_t embd);
+    template <typename... Args>
+    std::shared_ptr<Tensor> add_opr(Args&&... args) {
+        auto opr = std::make_shared<Op>(device(), name(), inputs(),
+                                        std::forward<Args>(args)...);
+        oprs().push_back(opr);
+        set_output(opr->outputs()[0]);
+        return opr->outputs()[0];
+    }
 
 private:
     Graph* m_graph;
@@ -178,14 +196,30 @@ public:
 
     size_t get_workspace_in_byte();
 
-    template <typename OpBlock, typename... Args>
-    std::shared_ptr<Tensor> add_block(Args&&... args) {
-        auto block = std::make_shared<OpBlock>(std::forward<Args>(args)...);
-        m_blocks.push_back(block);
-        return block->output();
+    template <typename OpModule, typename... Args>
+    std::shared_ptr<Tensor> add_module(Args&&... args) {
+        auto module = std::make_shared<OpModule>(std::forward<Args>(args)...);
+        m_modules.push_back(module);
+        return module->output();
+    }
+
+    template <typename Op>
+    std::shared_ptr<OneOpModule<Op>> add_one_opr_module(
+            Graph* graph, std::vector<std::shared_ptr<Tensor>> inputs,
+            Device* device, const std::string& name) {
+        auto module =
+                std::make_shared<OneOpModule<Op>>(graph, inputs, device, name);
+        m_modules.push_back(module);
+        return module;
     }
 
     void reset_ctx();
+
+    void collect_weights();
+
+    std::string get_weight_alias(const std::string& name);
+
+    static DType convert_dtype(int32_t type);
 
     bool same_input_shape(std::vector<int32_t> in_token);
 
@@ -198,10 +232,13 @@ public:
 
     virtual void constuct_llm() = 0;
 
+    virtual void set_weights_alias(){};
+
     std::shared_ptr<Tensor> m_input;
     std::shared_ptr<Tensor> m_output;
     std::unordered_map<std::string, std::shared_ptr<Tensor>> m_weights_map;
-    std::vector<std::shared_ptr<OprBlockBase>> m_blocks;
+    std::unordered_map<std::string, std::string> m_weights_name_aliases;
+    std::vector<std::shared_ptr<OprModuleBase>> m_modules;
 
 private:
 

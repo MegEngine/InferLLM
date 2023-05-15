@@ -18,8 +18,14 @@
 
 namespace inferllm {
 
+enum class FilePos {
+    Begin = 0,
+    Current = 1,
+    End = 2,
+};
+
 class InputFile {
-    FILE* m_file;
+    FILE* m_file = nullptr;
     int m_fd;
     size_t m_size;
     bool m_enable_mmap = false;
@@ -44,6 +50,8 @@ public:
     void rewind() { std::rewind(m_file); }
 
     void skip(int64_t bytes);
+
+    void seek(size_t offset, FilePos pos = FilePos::Begin);
 
     void read_raw(void* dst, size_t size);
 

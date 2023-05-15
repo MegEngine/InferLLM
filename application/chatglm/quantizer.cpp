@@ -71,7 +71,6 @@ static inline float compute_fp16_to_fp32(fp16_t h) {
 #endif
 
 struct Header {
-    int magic;
     int param_offset;
     int param_length;
     int vocab_offset;
@@ -80,7 +79,6 @@ struct Header {
 };
 
 struct Param {
-    int hidden_size;
     int n_heads;
     int n_layers;
     int embd_dim;
@@ -120,20 +118,25 @@ int main(int argc, char** argv) {
     }
 
     // load model header
+    int magic;
+    finp.read((char*)&magic, sizeof(magic));
+    if (magic != 0x0123456) {
+        fprintf(stderr, "%s: invalid model file '%s' (bad magic)\n", __func__,
+                inp_model.c_str());
+        return false;
+    }
+    fout.write((char*)&magic, sizeof(magic));
+
     Header header;
     finp.read((char*)&header, sizeof(header));
 
-    printf("%s: magic         = %d \n", __func__, header.magic);
+    printf("%s: magic         = %d \n", __func__, magic);
     printf("%s: param_offset  = %d \n", __func__, header.param_offset);
     printf("%s: param_length  = %d \n", __func__, header.param_length);
     printf("%s: vocab_offset  = %d \n", __func__, header.vocab_offset);
     printf("%s: vocab_length  = %d \n", __func__, header.vocab_length);
     printf("%s: tensor_offset = %d \n", __func__, header.tensor_offset);
-    if (header.magic != 0x0123456) {
-        fprintf(stderr, "%s: invalid model file '%s' (bad magic)\n", __func__,
-                inp_model.c_str());
-        return false;
-    }
+    
     fout.write((char*)&header, sizeof(header));
 
     // load model params and vocab
@@ -220,11 +223,24 @@ int main(int argc, char** argv) {
                     finp.read(reinterpret_cast<char*>(data_f32.data()),
                               nelements * sizeof(float));
                 }
+                ftype = 2; // quantized to int4
             } else {
                 const int bpe = (ftype == 0) ? sizeof(float) : sizeof(uint16_t);
                 data_u8.resize(nelements * bpe);
                 finp.read(reinterpret_cast<char*>(data_u8.data()),
                           nelements * bpe);
+                // if fp16 convert to fp32
+                if (ftype == 1) {
+                    data_f32.resize(nelements);
+                    fp16_t* fp16_data = (fp16_t*)(data_u8.data());
+                    for (int i = 0; i < nelements; i++) {
+                        data_f32[i] = COMPUTE_FP16_TO_FP32(fp16_data[i]);
+                    }
+                    data_u8.resize(nelements * sizeof(float));
+                    memcpy(data_u8.data(), data_f32.data(),
+                           nelements * sizeof(float));
+                }
+                ftype = 0; // convert to fp32
             }
             // write tensor header
             fout.write(reinterpret_cast<char*>(&n_dims), sizeof(n_dims));
@@ -246,6 +262,7 @@ int main(int argc, char** argv) {
                 fout.write(reinterpret_cast<char*>(work.data()), cur_size);
                 total_size_new += cur_size;
 
+                printf("quantized length = %zu\n", cur_size);
                 printf("quantized from size = %f MB to %f MB \n",
                        nelements * sizeof(fp16_t) / 1024.0 / 1024.0,
                        cur_size / 1024.0 / 1024.0);

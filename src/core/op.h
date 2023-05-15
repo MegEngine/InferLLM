@@ -112,12 +112,21 @@ private:
 class MatMul : public OpBase {
 public:
     MatMul(Device* device, const std::string& name, OpIOs inputs,
-           std::vector<size_t> shape)
-            : OpBase(device, name, inputs) {
+           std::vector<size_t> shape, bool bias = false)
+            : OpBase(device, name, inputs), m_bias(bias) {
         add_outputs(std::make_shared<Tensor>(device, name + "_out0"));
+        std::vector<std::shared_ptr<Tensor>> weights;
         auto weight = std::make_shared<Tensor>(device, name + ".weight");
         weight->set_shape(shape);
-        set_weights({weight});
+        weights.push_back(weight);
+        if (bias) {
+            auto bias = std::make_shared<Tensor>(device, name + ".bias");
+            std::vector<size_t> bias_shape;
+            bias_shape.push_back(shape[0]);
+            bias->set_shape(bias_shape);
+            weights.push_back(bias);
+        }
+        set_weights(weights);
     }
 
     virtual void deduce_output_shape() override {
@@ -127,11 +136,13 @@ public:
         size_t K = weight_shape[1];
         size_t N = weight_shape[0];
         outputs()[0]->set_shape({M, N}, inputs()[0]->dtype());
-        //INFER_LOG("Matmul shape is M/K/N = %zu, %zu, %zu\n", M, K, N);
+        // INFER_LOG("Matmul shape is M/K/N = %zu, %zu, %zu\n", M, K, N);
     }
     virtual void execute(WorkSpace* workspace, uint32_t nr_past) override;
 
     size_t get_workspace_in_byte() override;
+
+    bool m_bias = false;
 };
 
 class MatMulLast : public MatMul {
@@ -152,45 +163,6 @@ public:
     size_t get_workspace_in_byte() override;
 };
 
-class MatMulNoWeight : public OpBase {
-public:
-    MatMulNoWeight(Device* device, const std::string& name, OpIOs inputs)
-            : OpBase(device, name, inputs) {
-        add_outputs(std::make_shared<Tensor>(device, name + "_out0"));
-    }
-
-    void deduce_output_shape() override {
-        auto input_shape0 = inputs()[0]->shape();
-        auto input_shape1 = inputs()[1]->shape();
-        size_t M = input_shape0.size() == 2 ? input_shape0[0] : input_shape0[1];
-        size_t K = input_shape0.size() == 2 ? input_shape0[1] : input_shape0[2];
-        size_t N = input_shape1.size() == 2 ? input_shape1[1] : input_shape1[2];
-        size_t batch = 0;
-        if (input_shape0.size() > 2) {
-            batch = input_shape0[0];
-        }
-        if (input_shape1.size() > 2) {
-            batch = input_shape1[0];
-        }
-        if (batch > 1) {
-            outputs()[0]->set_shape({batch, M, N}, inputs()[0]->dtype());
-            /*INFER_LOG(
-                    "Matmul no weights shape is M/K/N = %zu, %zu, %zu, batch = "
-                    "%zu\n",
-                    M, K, N, batch);*/
-        } else {
-            outputs()[0]->set_shape({M, N}, inputs()[0]->dtype());
-            /*INFER_LOG(
-                    "Matmul no weights shape is M/K/N = %zu, %zu, %zu, batch = "
-                    "0\n",
-                    M, K, N);*/
-        }
-    }
-    void execute(WorkSpace* workspace, uint32_t nr_past) override;
-
-    size_t get_workspace_in_byte() override;
-};
-
 class SoftMax : public OpBase {
 public:
     SoftMax(Device* device, const std::string& name, OpIOs inputs)
@@ -198,29 +170,6 @@ public:
         add_outputs(std::make_shared<Tensor>(device, name + "_out0"));
     }
     void execute(WorkSpace* workspace, uint32_t nr_past) override;
-};
-
-class Permute : public OpBase {
-public:
-    Permute(Device* device, const std::string& name, OpIOs inputs,
-            std::vector<uint32_t> param)
-            : OpBase(device, name, inputs), m_param(param) {
-        add_outputs(std::make_shared<Tensor>(device, name + "_out0"));
-    }
-    void execute(WorkSpace* workspace, uint32_t nr_past) override;
-
-    void deduce_output_shape() override {
-        auto input_shape = inputs()[0]->shape();
-        std::vector<size_t> out_shape;
-        out_shape.resize(m_param.size());
-        for (size_t i = 0; i < m_param.size(); i++) {
-            out_shape[i] = input_shape[m_param[i]];
-        }
-        outputs()[0]->set_shape(out_shape, inputs()[0]->dtype());
-    }
-
-private:
-    std::vector<uint32_t> m_param;
 };
 
 class Reshape : public OpBase {
@@ -258,31 +207,17 @@ private:
     std::vector<int> m_target_shape;
 };
 
-class Rope : public OpBase {
-public:
-    Rope(Device* device, const std::string& name, OpIOs inputs,
-         uint32_t rot, RotMode mode)
-            : OpBase(device, name, inputs), m_rot(rot), m_mode(mode) {
-        add_outputs(std::make_shared<Tensor>(device, name + "_out0"));
-    }
-    void execute(WorkSpace* workspace, uint32_t nr_past) override;
-
-private:
-    uint32_t m_rot;
-    RotMode m_mode;
-};
-
-
 class Elemwise : public OpBase {
 public:
     Elemwise(Device* device, const std::string& name, OpIOs inputs,
-             ElemMode mode)
-            : OpBase(device, name, inputs), m_mode(mode) {
+             ElemMode mode, float scale = -INFINITY)
+            : OpBase(device, name, inputs), m_mode(mode), m_scale(scale) {
         add_outputs(std::make_shared<Tensor>(device, name + "_out0"));
     }
     void execute(WorkSpace* workspace, uint32_t nr_past) override;
 
 private:
+    float m_scale;
     ElemMode m_mode;
 };
 
@@ -295,84 +230,6 @@ public:
     void execute(WorkSpace* workspace, uint32_t nr_past) override;
 };
 
-//! MatMulkqv with cached the KvStorage, and output the kv with cache, and q
-class MatMulCacheKv : public OpBase {
-public:
-    MatMulCacheKv(Device* device, const std::string& name, OpIOs inputs,
-                  uint32_t embd, uint32_t nr_ctx, KvStorage* kstorage,
-                  KvStorage* vstorage)
-            : OpBase(device, name, inputs),
-              m_embd(embd),
-              m_ctx(nr_ctx),
-              m_kstorage(kstorage),
-              m_vstorage(vstorage) {
-        add_outputs(std::make_shared<Tensor>(device, name + "_out_k"));
-        add_outputs(std::make_shared<Tensor>(device, name + "_out_q"));
-        add_outputs(std::make_shared<Tensor>(device, name + "_out_v"));
-
-        auto weight_q = std::make_shared<Tensor>(device, name + ".wq.weight");
-        weight_q->set_shape(std::vector<size_t>{embd, embd});
-        auto weight_k = std::make_shared<Tensor>(device, name + ".wk.weight");
-        weight_k->set_shape(std::vector<size_t>{embd, embd});
-        auto weight_v = std::make_shared<Tensor>(device, name + ".wv.weight");
-        weight_v->set_shape(std::vector<size_t>{embd, embd});
-
-        set_weights({weight_q, weight_k, weight_v});
-    }
-
-    void deduce_output_shape() override {
-        size_t nr_past = m_kstorage->current_index();
-        auto dtype = inputs()[0]->dtype();
-        size_t length = inputs()[0]->shape()[0];
-        outputs()[0]->set_shape(std::vector<size_t>{nr_past + length, m_embd},
-                                dtype);
-        outputs()[1]->set_shape(std::vector<size_t>{length, m_embd}, dtype);
-        outputs()[2]->set_shape(std::vector<size_t>{nr_past + length, m_embd},
-                                dtype);
-    }
-
-    void pre_execute() override{
-        for (auto weight : weights()) {
-            weight->prepare_data();
-        }
-        auto output = outputs()[1];
-        //! output q
-        if (output->get_curr_user_count() == 0) {
-            output->prepare_data();
-            output->resume_user_count();
-        }
-        m_kstorage->prepare_data();
-        m_vstorage->prepare_data();
-        void* k_ptr = m_kstorage->ptr();
-        void* v_ptr = m_kstorage->ptr();
-        outputs()[0]->set_shared_memory(k_ptr, outputs()[0]->length_in_byte());
-        outputs()[2]->set_shared_memory(v_ptr, outputs()[2]->length_in_byte());
-    }
-
-    void execute(WorkSpace* workspace, uint32_t nr_past) override;
-
-    void end_execute() override {
-        for (auto weight : weights()) {
-            weight->recall_data();
-        }
-        for (auto input : inputs()) {
-            input->decrease_curr_user_count();
-        }
-        auto token_len = inputs()[0]->shape()[0];
-        m_kstorage->add_id(token_len);
-        m_vstorage->add_id(token_len);
-    }
-
-    size_t get_workspace_in_byte() override;
-
-private:
-    uint32_t m_embd;
-    uint32_t m_ctx;
-    KvStorage* m_kstorage;
-    KvStorage* m_vstorage;
-};
-
-
 //! Attention with cached the KvStorage, and output the kv with cache, and q
 //! a*(wq, wk, qv) = q, k, v
 //! out = softmax(q*k)*v
@@ -380,24 +237,67 @@ class Attention : public OpBase {
 public:
     Attention(Device* device, const std::string& name, OpIOs inputs,
               uint32_t embd, uint32_t rot, uint32_t nr_ctx, uint32_t head,
-              KvStorage* kstorage, KvStorage* vstorage)
+              KvStorage* kstorage, KvStorage* vstorage,
+              bool fused_weights = false, bool bias = false,
+              bool rotary_weight = false)
             : OpBase(device, name, inputs),
               m_embd(embd),
               m_head(head),
               m_rot(rot),
               m_ctx(nr_ctx),
+              m_fused_weights(fused_weights),
+              m_bias(bias),
+              m_rotary_weights(rotary_weight),
               m_kstorage(kstorage),
               m_vstorage(vstorage) {
         add_outputs(std::make_shared<Tensor>(device, name + "_out"));
-
-        auto weight_q = std::make_shared<Tensor>(device, name + ".wq.weight");
-        weight_q->set_shape(std::vector<size_t>{embd, embd});
-        auto weight_k = std::make_shared<Tensor>(device, name + ".wk.weight");
-        weight_k->set_shape(std::vector<size_t>{embd, embd});
-        auto weight_v = std::make_shared<Tensor>(device, name + ".wv.weight");
-        weight_v->set_shape(std::vector<size_t>{embd, embd});
-
-        set_weights({weight_q, weight_k, weight_v});
+        std::vector<std::shared_ptr<Tensor>> weights;
+        if (m_fused_weights) {
+            auto weight_fused =
+                    std::make_shared<Tensor>(device, name + ".wqkv.weight");
+            weight_fused->set_shape(std::vector<size_t>{m_embd * 3, m_embd});
+            weights.push_back(weight_fused);
+            if (m_bias) {
+                auto weight_bias =
+                        std::make_shared<Tensor>(device, name + ".wqkv.bias");
+                weight_bias->set_shape(std::vector<size_t>{m_embd * 3});
+                weights.push_back(weight_bias);
+            }
+        } else {
+            auto weight_q =
+                    std::make_shared<Tensor>(device, name + ".wq.weight");
+            weight_q->set_shape(std::vector<size_t>{embd, embd});
+            auto weight_k =
+                    std::make_shared<Tensor>(device, name + ".wk.weight");
+            weight_k->set_shape(std::vector<size_t>{embd, embd});
+            auto weight_v =
+                    std::make_shared<Tensor>(device, name + ".wv.weight");
+            weight_v->set_shape(std::vector<size_t>{embd, embd});
+            weights.push_back(weight_q);
+            weights.push_back(weight_k);
+            weights.push_back(weight_v);
+            if (m_bias) {
+                auto bias_q =
+                        std::make_shared<Tensor>(device, name + ".wq.bias");
+                bias_q->set_shape(std::vector<size_t>{embd});
+                auto bias_k =
+                        std::make_shared<Tensor>(device, name + ".wk.bias");
+                bias_k->set_shape(std::vector<size_t>{embd});
+                auto bias_v =
+                        std::make_shared<Tensor>(device, name + ".wv.bias");
+                bias_v->set_shape(std::vector<size_t>{embd});
+                weights.push_back(bias_q);
+                weights.push_back(bias_k);
+                weights.push_back(bias_v);
+            }
+        }
+        if (m_rotary_weights) {
+            auto rotary =
+                    std::make_shared<Tensor>(device, name + ".rotary.inv_freq");
+            rotary->set_shape(std::vector<size_t>{m_head});
+            weights.push_back(rotary);
+        }
+        set_weights(weights);
     }
 
     void pre_execute() override{
@@ -436,6 +336,9 @@ private:
     uint32_t m_head;
     uint32_t m_rot;
     uint32_t m_ctx;
+    bool m_fused_weights;
+    bool m_bias;
+    bool m_rotary_weights;
     KvStorage* m_kstorage;
     KvStorage* m_vstorage;
 };
@@ -451,7 +354,7 @@ public:
         add_outputs(std::make_shared<Tensor>(device, name + "_out0"));
 
         auto embeddings = std::make_shared<Tensor>(device, name + ".weight");
-        std::vector<size_t> shape = {(size_t)embd, (size_t)vocab};
+        std::vector<size_t> shape = {(size_t)vocab, (size_t)embd};
         embeddings->set_shape(shape);
         set_weights({embeddings});
     }

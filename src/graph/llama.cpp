@@ -1,6 +1,21 @@
-#include "graph_imp.h"
+#include "llama.h"
 
 using namespace inferllm;
+
+void LlamaGraph::set_weights_alias() {
+    m_weights_name_aliases.clear();
+    m_weights_name_aliases = {
+            {"norm.weight", "head.norm.weight"},
+            {"output.weight", "head.output.weight"},
+            {"layers.x.feed_forward.w3.weight", "layers.x.ffn.w3.weight"},
+            {"layers.x.feed_forward.w2.weight", "layers.x.ffn.w2.weight"},
+            {"layers.x.feed_forward.w1.weight", "layers.x.ffn.w1.weight"},
+            {"layers.x.ffn_norm.weight", "layers.x.ffn.norm.weight"},
+            {"layers.x.attention_norm.weight",
+             "layers.x.attention.norm.weight"},
+    };
+}
+
 //! LlamaGraph
 void LlamaGraph::load(std::shared_ptr<InputFile> fin, LlmParams& param,
                       std::shared_ptr<Vocab> vocab) {
@@ -53,22 +68,13 @@ void LlamaGraph::load(std::shared_ptr<InputFile> fin, LlmParams& param,
 
     m_param = param;
 
+    //! construct the llm graph with the input parameters
     constuct_llm();
+    //! collect all the weights from the llm graph into the weights map
+    collect_weights();
 
-    auto convert_dtype = [](int32_t type) {
-        switch (type) {
-            case 0:
-                return DType::Float32;
-            case 1:
-                return DType::Float16;
-            case 2:
-                return DType::Int4;
-            case 3:
-                return DType::Uint4;
-            default:
-                INFER_ASSERT(0, "unsupported weight type");
-        }
-    };
+    //! read or mmap all the weights from the model file
+    set_weights_alias();
     size_t weight_length = 0;
     while (true) {
         int32_t n_dims;
@@ -95,13 +101,14 @@ void LlamaGraph::load(std::shared_ptr<InputFile> fin, LlmParams& param,
 
         std::string name(length, 0);
         fin->read_raw(&name[0], length);
-        INFER_ASSERT(m_weights_map.count(name) == 1,
+        auto alias_name = get_weight_alias(name);
+        INFER_ASSERT(m_weights_map.count(alias_name) == 1,
                      "Error weight is not found when loading.");
         if (model_type >= LlamaModelType::LLAMA_FILE_VERSION_GGJT_V1) {
             // skip to the next multiple of 32 bytes
             fin->skip(-fin->tell() & 31);
         }
-        auto weight = m_weights_map[name];
+        auto weight = m_weights_map[alias_name];
         INFER_ASSERT(weight->length() == nr_number,
                      "Error length of weight is mismatch.");
         weight->set_file(fin, fin->tell());
@@ -113,56 +120,56 @@ void LlamaGraph::load(std::shared_ptr<InputFile> fin, LlmParams& param,
 }
 
 void LlamaGraph::constuct_llm() {
+    uint32_t embd = m_param.n_embd;
+    uint32_t mult = m_param.n_mult;
+    uint32_t head = m_param.n_head;
+    uint32_t rot = m_param.n_rot;
+    uint32_t ctx = m_param.n_ctx;
+    uint32_t n_vocab = m_param.n_vocab;
+
+    size_t nff = ((2 * (4 * embd) / 3 + mult - 1) / mult) * mult;
     m_input = std::make_shared<Tensor>(device(), name() + ":input");
     std::shared_ptr<Tensor> input = m_input;
     //! embd
-    input = add_block<EmbdBlock>(this, input, m_param.n_embd, m_param.n_vocab,
-                                 model_config(), device(), "");
+    input = add_module<EmbdModule>(this, input, embd, n_vocab, model_config(),
+                                 device(), "");
 
     int nr_layer = m_param.n_layer;
     for (int i = 0; i < nr_layer; i++) {
         std::string name = "layers." + std::to_string(i);
         //! layer norm
         std::shared_ptr<Tensor> attention_input = input;
-        auto norm_out_attention = add_block<LayerNormBlock>(
-                this, attention_input, device(), name + ".attention_norm",
-                m_param.n_embd);
+        auto norm_out_attention = add_one_opr_module<LayerNorm>(
+                                          this, OpIOs{attention_input},
+                                          device(), name + ".attention.norm")
+                                          ->add_opr(embd);
         //! attentin
-        auto attention_output = add_block<AttentionBlock>(
-                this, norm_out_attention, m_param.n_embd, m_param.n_head,
-                m_param.n_rot, m_param.n_ctx, model_config(), device(),
-                name + ".attention");
+        auto attention_output = add_module<AttentionModule>(
+                this, norm_out_attention, embd, head, rot, ctx, model_config(),
+                device(), name + ".attention");
         //! add
-        auto add_output = add_block<ElemwiseAddBlock>(
-                this, OpIOs{attention_input, attention_output}, device(),
-                name + ".attention:Elemwise");
+        auto add_output =
+                add_one_opr_module<Elemwise>(
+                        this, OpIOs{attention_input, attention_output},
+                        device(), name + ".attention_add")
+                        ->add_opr(ElemMode::Add);
 
         std::shared_ptr<Tensor> feed_forward_input = add_output;
         //! layer normal
         auto ffn_norm_out =
-                add_block<LayerNormBlock>(this, feed_forward_input, device(),
-                                          name + ".ffn_norm", m_param.n_embd);
+                add_one_opr_module<LayerNorm>(this, OpIOs{feed_forward_input},
+                                              device(), name + ".ffn.norm")
+                        ->add_opr(embd);
         //! feed forward
-        auto ffn_output = add_block<FeedForwardBlock>(
-                this, ffn_norm_out, m_param.n_embd, m_param.n_mult,
-                model_config(), device(), name);
+        auto ffn_output = add_module<LlamaFFNModule>(
+                this, ffn_norm_out, embd, nff, model_config(), device(), name);
         //! add
-        input = add_block<ElemwiseAddBlock>(
-                this, OpIOs{feed_forward_input, ffn_output}, device(),
-                name + ".ffn:Elemwise");
+        input = add_one_opr_module<Elemwise>(
+                        this, OpIOs{feed_forward_input, ffn_output}, device(),
+                        name + ".ffn_add")
+                        ->add_opr(ElemMode::Add);
     }
     //! the last layer
-    m_output =
-            add_block<HeadBlock>(this, input, m_param.n_embd, m_param.n_vocab,
-                                 model_config(), device(), "");
-
-    //! collect all the weights
-    for (auto block : m_blocks) {
-        auto all_weights = block->get_all_weights();
-        for (auto weight : all_weights) {
-            std::string name = weight->name();
-            INFER_ASSERT(m_weights_map.count(name) == 0, "dumplicated weight.");
-            m_weights_map[name] = weight;
-        }
-    }
+    m_output = add_module<HeadModule>(this, input, embd, n_vocab, model_config(),
+                                    device(), "head");
 }

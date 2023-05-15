@@ -32,6 +32,14 @@ inline void elemwise_vector_silu(const int n, const float* __restrict x,
     }
 }
 
+inline void elemwise_vector_gelu(const int n, const float* __restrict x,
+                                 float* __restrict z) {
+    for (int i = 0; i < n; i++) {
+        float src = x[i];
+        z[i] = 0.5 * src *
+               (1 + tanh(sqrt(2.0 / PI) * (src + PGELU * src * src * src)));
+    }
+}
 
 inline void elemwise_vec_scale(const int n, const float* __restrict x,
                                float scale, float* __restrict z) {

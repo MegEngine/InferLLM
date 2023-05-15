@@ -67,6 +67,15 @@ TaskSet llm_elemwise_compute_float(InData<float> srcs, float* dst,
             };
             break;
         }
+        case ElemMode::Gelu: {
+            task = [=](const TaskId& id) {
+                uint32_t offset = id.start;
+                uint32_t len = id.end - id.start;
+                return elemwise_vector_gelu(len, srcs[0] + offset,
+                                            dst + offset);
+            };
+            break;
+        }
         default:
             INFER_ASSERT(0, "Not supported.");
     }
@@ -137,9 +146,9 @@ TaskSet llm_softmax_compute_float(const float* src, float* dst,
 
 // compute the softmax of the last dim of src, and store the result in dst
 TaskSet llm_matmul_compute_int4_float(float* dst, const void* src0,
-                                      const float* src1, uint32_t M, uint32_t N,
-                                      uint32_t K, void* workspace,
-                                      uint32_t size) {
+                                      const float* bias, const float* src1,
+                                      uint32_t M, uint32_t N, uint32_t K,
+                                      void* workspace, uint32_t size) {
     //! src0 is quantized weights, weights store in 32 data as block and a block
     //! share the same scale, src1 is featureMap. src0 layout is {N,
     //! K}, src1 layout is {M, K}, the dst is {M, N}
@@ -165,6 +174,13 @@ TaskSet llm_matmul_compute_int4_float(float* dst, const void* src0,
         uint32_t n_block_4_left = N_len - n_block_4 * 4;
         for (uint32_t block4 = 0; block4 < n_block_4; block4++) {
             uint32_t n = block4 * 4 + id.start;
+            float b0 = 0.f, b1 = 0.f, b2 = 0.f, b3 = 0.0f;
+            if (bias) {
+                b0 = bias[n];
+                b1 = bias[n + 1];
+                b2 = bias[n + 2];
+                b3 = bias[n + 3];
+            }
             const void* q_weight0 =
                     static_cast<const uint8_t*>(src0) + n * weight_q40_stride;
             const void* q_weight1 =
@@ -175,20 +191,24 @@ TaskSet llm_matmul_compute_int4_float(float* dst, const void* src0,
                     static_cast<const uint8_t*>(src0) + (n + 3) * weight_q40_stride;
             for (uint32_t m = 0; m < M; m++) {
                 int8_t* src = q_src + m * weight_q80_stride;
-                dst[m * N + n] = vec_vec_dot_q40_with_q80(K, q_weight0, src);
-                dst[m * N + n + 1] = vec_vec_dot_q40_with_q80(K, q_weight1, src);
-                dst[m * N + n + 2] = vec_vec_dot_q40_with_q80(K, q_weight2, src);
-                dst[m * N + n + 3] = vec_vec_dot_q40_with_q80(K, q_weight3, src);
+                dst[m * N + n] = vec_vec_dot_q40_with_q80(K, q_weight0, src) + b0;
+                dst[m * N + n + 1] = vec_vec_dot_q40_with_q80(K, q_weight1, src) + b1;
+                dst[m * N + n + 2] = vec_vec_dot_q40_with_q80(K, q_weight2, src) + b2;
+                dst[m * N + n + 3] = vec_vec_dot_q40_with_q80(K, q_weight3, src) + b3;
             }
         }
 
         for (uint32_t left = 0; left < n_block_4_left; left++) {
             uint32_t n = n_block_4 * 4 + left + id.start;
+            float b0 = 0.f;
+            if (bias) {
+                b0 = bias[n];
+            }
             const void* q_weight =
                     static_cast<const uint8_t*>(src0) + n * weight_q40_stride;
             for (uint32_t m = 0; m < M; m++) {
                 int8_t* src = q_src + m * weight_q80_stride;
-                dst[m * N + n] = vec_vec_dot_q40_with_q80(K, q_weight, src);
+                dst[m * N + n] = vec_vec_dot_q40_with_q80(K, q_weight, src) + b0;
             }
         }
     };

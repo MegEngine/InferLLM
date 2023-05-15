@@ -7,17 +7,32 @@
 #include "core/graph.h"
 
 namespace inferllm {
+namespace chatglm {
 
-enum class LlamaModelType {
-    LLAMA_FILE_VERSION_GGML = 0,
-    LLAMA_FILE_VERSION_GGMF_V1,  // added version field and scores in vocab
-    LLAMA_FILE_VERSION_GGJT_V1
+struct Header {
+    int param_offset;
+    int param_length;
+    int vocab_offset;
+    int vocab_length;
+    int tensor_offset;
 };
 
-class LlamaGraph : public Graph {
+struct Param {
+    int hidden_size;
+    int n_heads;
+    int n_layers;
+    int embd_dim;
+    int fc_hidden;
+    int vacab_size;
+};
+
+}  // namespace chatglm
+
+class ChatGLMGraph : public Graph {
     using Graph::Graph;
 
 public:
+    void set_weights_alias() override;
     void constuct_llm() override;
     uint32_t get_nr_ctx() override { return m_param.n_ctx; }
     uint32_t get_nr_vocab() override { return m_param.n_vocab; }

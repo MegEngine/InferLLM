@@ -7,6 +7,7 @@ using namespace inferllm;
 InputFile::InputFile(const std::string& path, bool enable_mmap)
         : m_enable_mmap{enable_mmap} {
     m_file = fopen(path.c_str(), "rb");
+    INFER_ASSERT(m_file, "Failed to open model file.");
     m_fd = fileno(m_file);
     fseek(m_file, 0, SEEK_END);
     m_size = ftell(m_file);
@@ -38,6 +39,11 @@ std::string InputFile::read_string(std::uint32_t len) {
 
 void InputFile::skip(int64_t bytes) {
     auto err = fseek(m_file, bytes, SEEK_CUR);
+    INFER_ASSERT(!err, "skip file error");
+}
+
+void InputFile::seek(size_t offset, FilePos pos) {
+    auto err = fseek(m_file, offset, (int)pos);
     INFER_ASSERT(!err, "skip file error");
 }
 

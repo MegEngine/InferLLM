@@ -26,8 +26,9 @@ TaskSet llm_softmax_compute_float(const float* src, float* dst, uint32_t len_row
 
 // compute the softmax of the last dim of src, and store the result in dst
 TaskSet llm_matmul_compute_int4_float(float* dst, const void* src0,
-                                   const float* src1, uint32_t M, uint32_t N,
-                                   uint32_t K, void* workspace, uint32_t size);
+                                      const float* bias, const float* src1,
+                                      uint32_t M, uint32_t N, uint32_t K,
+                                      void* workspace, uint32_t size);
 
 size_t llm_matmul_get_workspace_float(uint32_t nr_thread, uint32_t M,
                                       uint32_t N, uint32_t K);

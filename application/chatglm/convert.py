@@ -53,10 +53,9 @@ args = parser.parse_args()
 model_out_path = args.outfile
 
 hparams = {
-        "hidden_size": 4096,
+        "embd_size": 4096,
         "n_heads": 32,
         "n_layers": 28,
-        "embd_dim": 4096,
         "fc_hidden": 16384,
 }
 
@@ -75,10 +74,9 @@ fout = open(model_out_path, "wb")
 fout.write(struct.pack("i", 0x0123456)) # magic: inferllm
 
 # the model parameters
-param_byte = struct.pack("i", hparams["hidden_size"])
+param_byte = struct.pack("i", hparams["embd_size"])
 param_byte +=struct.pack("i", hparams["n_heads"])
 param_byte +=struct.pack("i", hparams["n_layers"])
-param_byte +=struct.pack("i", hparams["embd_dim"])
 param_byte +=struct.pack("i", hparams["fc_hidden"])
 param_byte +=struct.pack("i", hparams["vocab_size"])
 
