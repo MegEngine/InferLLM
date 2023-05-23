@@ -51,32 +51,6 @@ OprModuleBase::OprModuleBase(std::vector<std::shared_ptr<Tensor>> inputs,
                            Device* device, const std::string& name)
         : m_name(name), m_device(device), m_inputs(inputs) {}
 
-AttentionModule::AttentionModule(Graph* graph, std::shared_ptr<Tensor> input,
-                                 uint32_t embd, uint32_t head, uint32_t rot,
-                                 uint32_t nr_ctx, UserConfig model_config,
-                                 Device* device, const std::string& name,
-                                 bool fused_weights, bool bias, bool rotary)
-        : OprModuleBase(input, device, name),
-          m_embd(embd),
-          m_head(head),
-          m_rot(rot),
-          m_graph(graph) {
-    INFER_ASSERT(embd % head == 0, "Embedding and head is not match.");
-    m_index = 0;
-    m_kstorage = make_unique<KvStorage>(std::vector<size_t>{nr_ctx, embd},
-                                        model_config.compt_type, device);
-    m_vstorage = make_unique<KvStorage>(std::vector<size_t>{nr_ctx, embd},
-                                        model_config.compt_type, device);
-    //! kqv-matmul
-    auto v_out = add_opr<Attention>(
-            device, name, OpIOs{input}, embd, rot, nr_ctx, head,
-            m_kstorage.get(), m_vstorage.get(), fused_weights, bias, rotary)[0];
-    //! matmul proj
-    auto proj_out = add_opr<MatMul>(device, name + ".wo", OpIOs{v_out},
-                                    std::vector<size_t>{embd, embd}, bias)[0];
-    set_output(proj_out);
-}
-
 LlamaFFNModule::LlamaFFNModule(Graph* graph, std::shared_ptr<Tensor> input,
                                    uint32_t embd, uint32_t mult,
                                    UserConfig model_config, Device* device,
@@ -172,7 +146,7 @@ size_t Graph::get_workspace_in_byte() {
 
 void Graph::execute(std::vector<int32_t> in_token, std::vector<float>& logist,
                     uint32_t nr_past, bool prefill) {
-    if (!same_input_shape(in_token)) {
+    if (m_input->dims() == 0 || !same_input_shape(in_token)) {
         m_input->set_shape({in_token.size()}, DType::Int32);
         if (m_workspace->ptr()) {
             m_device->free_device(m_workspace->ptr());
@@ -262,14 +236,6 @@ Graph::~Graph() {
 }
 
 bool Graph::same_input_shape(std::vector<int32_t> in_token) {
-    if (m_input->dims() != in_token.size()) {
-        return false;
-    } else {
-        for (size_t i = 0; i < in_token.size(); i++) {
-            if (m_input->shape()[i] != in_token[i]) {
-                return false;
-            }
-        }
-    }
-    return true;
+    INFER_ASSERT(m_input->dims() == 1, "input tensor should be one dim.");
+    return m_input->shape()[0] == in_token.size();
 }

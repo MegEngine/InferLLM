@@ -38,6 +38,7 @@ public:
     uint32_t get_nr_vocab() override { return m_param.n_vocab; }
     void load(std::shared_ptr<InputFile> fin, LlmParams& param,
               std::shared_ptr<Vocab> vocab) override;
+    void post_tokenize(std::vector<Vocab::Id>& input) override;
 
 private:
     LlmParams m_param;

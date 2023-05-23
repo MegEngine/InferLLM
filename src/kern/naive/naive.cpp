@@ -24,6 +24,20 @@ TaskSet llm_embedding_get_int4_float(const void* weights, const uint32_t* index,
     return TaskSet{{task, len_seq}};
 }
 
+TaskSet llm_embedding_get_float_float(const float* weights,
+                                      const uint32_t* index, float* dst,
+                                      uint32_t len_seq, uint32_t embd) {
+    auto task = [=](const TaskId& id) {
+        for (uint32_t i = id.start; i < id.end; ++i) {
+            const int row = index[i];
+            const int weight_stride = embd;
+            memcpy(dst + i * embd, weights + row * weight_stride,
+                   embd * sizeof(float));
+        }
+    };
+    return TaskSet{{task, len_seq}};
+}
+
 TaskSet llm_elemwise_compute_float(InData<float> srcs, float* dst, size_t len,
                                 ElemMode mode) {
     MultiThreadingTask task;
@@ -75,6 +89,17 @@ TaskSet llm_elemwise_compute_float(InData<float> srcs, float* dst, size_t len,
         default:
             INFER_ASSERT(0, "Not supported.");
     }
+    return TaskSet{{task, len}};
+}
+
+TaskSet llm_elemwise_compute_float_scale(float* src, float* dst, size_t len,
+                                         float scale) {
+    MultiThreadingTask task;
+    task = [=](const TaskId& id) {
+        for (size_t i = id.start; i < id.end; i++) {
+            dst[i] = src[i] * scale;
+        }
+    };
     return TaskSet{{task, len}};
 }
 
@@ -246,6 +271,32 @@ size_t llm_matmul_get_workspace_float(uint32_t nr_thread, uint32_t M,
     return M * K * dtype_in_byte(DType::Int8) / dtype_block_size(DType::Int8);
 }
 
+size_t llm_matmul_get_workspace_float_float(uint32_t nr_thread, uint32_t M,
+                                            uint32_t N, uint32_t K) {
+    return 0;
+}
+
+// compute the softmax of the last dim of src, and store the result in dst
+TaskSet llm_matmul_compute_float_float(float* dst, const float* src0,
+                                       const float* bias, const float* src1,
+                                       uint32_t M, uint32_t N, uint32_t K,
+                                       void* workspace, uint32_t size) {
+    const float* src = src1;
+    auto task = [=](const TaskId& id) {
+        for (uint32_t n = id.start; n < id.end; n++) {
+            const float* weight = src0 + n * K;
+            float b = bias ? bias[n] : 0.0f;
+            for (uint32_t m = 0; m < M; m++) {
+                const float* p_src = src + m * K;
+                dst[m * N + n] = vec_vec_dot_float_with_float_reference(
+                                         K, weight, p_src) +
+                                 b;
+            }
+        }
+    };
+    return TaskSet{{task, N}};
+}
+
 TaskSet llm_rope_compute_float(float* dst, const float* src0, uint32_t n_past,
                                uint32_t n_rot, RotMode m, uint32_t N,
                                uint32_t head, uint32_t embd) {
@@ -281,6 +332,60 @@ TaskSet llm_rope_compute_float(float* dst, const float* src0, uint32_t n_past,
     return TaskSet{{task, ne1}};
 }
 
+TaskSet llm_glm_rope_compute_float(float* dst, const float* src0,
+                                   uint32_t n_past, uint32_t gmask_positon,
+                                   uint32_t seqlen, uint32_t head,
+                                   uint32_t embd) {
+    bool prefill = false;
+    if (n_past == 0) {
+        prefill = true;
+    }
+    int quart_embd = embd / 4;
+    int half_embd = embd / 2;
+    auto task = [=](const TaskId& id) {
+        for (int h = id.start; h < id.end; h++) {
+            for (int seq = 0; seq < seqlen; seq++) {
+                int position_id = std::min(seq + n_past, gmask_positon);
+                int block_position_id =
+                        std::max((int)(n_past + seq) - (int)gmask_positon, 0);
+                for (int p = 0; p < quart_embd; p++) {
+                    const double theta =
+                            pow(10000.0, ((double)-2 * p) / (half_embd));
+                    const double cos_theta = cos(position_id * theta);
+                    const double sin_theta = sin(position_id * theta);
+
+                    const double cos_theta_b = cos(block_position_id * theta);
+                    const double sin_theta_b = sin(block_position_id * theta);
+
+                    //! first half
+                    {
+                        const float* const src =
+                                src0 + seq * head * embd + h * embd + p;
+                        float* dst_data =
+                                dst + seq * head * embd + h * embd + p;
+                        double x0 = src[0];
+                        double x32 = src[quart_embd];
+                        dst_data[0] = x0 * cos_theta - x32 * sin_theta;
+                        dst_data[quart_embd] = x32 * cos_theta + x0 * sin_theta;
+                    }
+                    //! second half
+                    {
+                        const float* const src = src0 + seq * head * embd +
+                                                 h * embd + half_embd + p;
+                        float* dst_data = dst + seq * head * embd + h * embd +
+                                          half_embd + p;
+                        double x0 = src[0];
+                        double x32 = src[quart_embd];
+                        dst_data[0] = x0 * cos_theta_b - x32 * sin_theta_b;
+                        dst_data[quart_embd] = x32 * cos_theta_b + x0 * sin_theta_b;
+                    }
+                }
+            }
+        }
+    };
+    return TaskSet{{task, head}};
+}
+
 TaskSet llm_diag_mask_inf_float(float* dst, const float* src0, uint32_t n_past,
                                 uint32_t N, uint32_t head) {
     const int nc = n_past + N;
@@ -299,6 +404,22 @@ TaskSet llm_diag_mask_inf_float(float* dst, const float* src0, uint32_t n_past,
         }
     };
     return TaskSet{{task, nz}};
+}
+
+TaskSet llm_glm_gmask_inf_float(float* dst, uint32_t n_past, uint32_t seqlen,
+                                uint32_t head) {
+    //! set every head the last number of data to -inf of every row expect
+    //! the
+    //! last row
+    const int nc = n_past + seqlen;
+    auto task = [=](const TaskId& id) {
+        for (int k = id.start; k < id.end; k++) {
+            for (int j = 0; j < seqlen - 1; j++) {
+                dst[k * nc * seqlen + j * nc + nc - 1] = -INFINITY;
+            }
+        }
+    };
+    return TaskSet{{task, head}};
 }
 
 TaskSet llm_scale_diag_mask_inf_float(float* dst, const float* src0,

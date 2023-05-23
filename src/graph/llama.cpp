@@ -23,7 +23,7 @@ void LlamaGraph::load(std::shared_ptr<InputFile> fin, LlmParams& param,
     uint32_t magic;
     uint32_t version = 0;
     fin->read_raw((char*)&magic, sizeof(magic));
-    if(magic != 'ggml'){
+    if (magic != 'ggml') {
         fin->read_raw((char*)&version, sizeof(version));
     }
     LlamaModelType model_type;
@@ -132,7 +132,7 @@ void LlamaGraph::constuct_llm() {
     std::shared_ptr<Tensor> input = m_input;
     //! embd
     input = add_module<EmbdModule>(this, input, embd, n_vocab, model_config(),
-                                 device(), "");
+                                   device(), "");
 
     int nr_layer = m_param.n_layer;
     for (int i = 0; i < nr_layer; i++) {
@@ -144,9 +144,9 @@ void LlamaGraph::constuct_llm() {
                                           device(), name + ".attention.norm")
                                           ->add_opr(embd);
         //! attentin
-        auto attention_output = add_module<AttentionModule>(
+        auto attention_output = add_module<AttentionModule<LlamaAttention>>(
                 this, norm_out_attention, embd, head, rot, ctx, model_config(),
-                device(), name + ".attention");
+                device(), name + ".attention", i);
         //! add
         auto add_output =
                 add_one_opr_module<Elemwise>(
@@ -170,6 +170,6 @@ void LlamaGraph::constuct_llm() {
                         ->add_opr(ElemMode::Add);
     }
     //! the last layer
-    m_output = add_module<HeadModule>(this, input, embd, n_vocab, model_config(),
-                                    device(), "head");
+    m_output = add_module<HeadModule>(this, input, embd, n_vocab,
+                                      model_config(), device(), "head");
 }

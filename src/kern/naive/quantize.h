@@ -135,5 +135,14 @@ inline float vec_vec_dot_q40_with_q80_reference(const int n, const void* vx,
     return sumf;
 }
 
+inline float vec_vec_dot_float_with_float_reference(const int n, const float* x,
+                                                    const float* y) {
+    float sumf = 0.0;
+    for (int i = 0; i < n; i++) {
+        sumf += x[i] * y[i];
+    }
+    return sumf;
+}
+
 }  // namespace naive
 }  // namespace inferllm

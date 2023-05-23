@@ -42,7 +42,7 @@ void ChatGLMGraph::set_weights_alias() {
 
 //! LlamaGraph
 void ChatGLMGraph::load(std::shared_ptr<InputFile> fin, LlmParams& param,
-                      std::shared_ptr<Vocab> vocab) {
+                        std::shared_ptr<Vocab> vocab) {
     // verify the magic number wrote when model convert
     uint32_t magic;
     uint32_t version = 0;
@@ -75,7 +75,7 @@ void ChatGLMGraph::load(std::shared_ptr<InputFile> fin, LlmParams& param,
     param.n_vocab = 130528;
     constuct_llm();
     collect_weights();
-    
+
     fin->seek(header.tensor_offset);
     set_weights_alias();
     size_t weight_length = 0;
@@ -105,8 +105,6 @@ void ChatGLMGraph::load(std::shared_ptr<InputFile> fin, LlmParams& param,
         std::string name(length, 0);
         fin->read_raw(&name[0], length);
         auto alias_name = get_weight_alias(name);
-        printf("name is %s, alias_name is %s\n", name.c_str(),
-               alias_name.c_str());
         INFER_ASSERT(m_weights_map.count(alias_name) == 1,
                      "Error weight is not found when loading.");
         auto weight = m_weights_map[alias_name];
@@ -125,7 +123,7 @@ void ChatGLMGraph::constuct_llm() {
     std::shared_ptr<Tensor> input = m_input;
     //! embd
     input = add_module<EmbdModule>(this, input, m_param.n_embd, m_param.n_vocab,
-                                 model_config(), device(), "");
+                                   model_config(), device(), "");
 
     int nr_layer = m_param.n_layer;
     float scale = sqrt(2 * nr_layer);
@@ -137,14 +135,15 @@ void ChatGLMGraph::constuct_llm() {
                 add_one_opr_module<LayerNorm>(this, OpIOs{attention_input},
                                               device(),
                                               name + ".attention_norm")
-                        ->add_opr(m_param.n_embd, /*mul*/ true, /*bias*/ true);
+                        ->add_opr(m_param.n_embd, /*mul*/ true, /*bias*/ true,
+                                  /*rms*/ false);
         //! attentin
-        auto attention_output = add_module<AttentionModule>(
+        auto attention_output = add_module<AttentionModule<GlmAttention>>(
                 this, norm_out_attention, m_param.n_embd, m_param.n_head,
                 m_param.n_rot, m_param.n_ctx, model_config(), device(),
-                name + ".attention", true /*fused_weights*/, true /*bias*/,
+                name + ".attention", i, true /*fused_weights*/, true /*bias*/,
                 true /*rotary*/);
-        //! add
+        //! add  norm_out_attention * scale + attention_output
         auto add_output =
                 add_one_opr_module<Elemwise>(
                         this, OpIOs{norm_out_attention, attention_output},
@@ -156,12 +155,13 @@ void ChatGLMGraph::constuct_llm() {
         auto ffn_norm_out =
                 add_one_opr_module<LayerNorm>(this, OpIOs{feed_forward_input},
                                               device(), name + ".ffn_norm")
-                        ->add_opr(m_param.n_embd, /*mul*/ true, /*bias*/ true);
+                        ->add_opr(m_param.n_embd, /*mul*/ true, /*bias*/ true,
+                                  /*rms*/ false);
         //! feed forward
         auto ffn_output = add_module<GlmFFNModule>(
                 this, ffn_norm_out, m_param.n_embd, m_param.n_mult,
                 model_config(), device(), name);
-        //! add
+        //! add ffn_norm_out * scale + ffn_output
         input = add_one_opr_module<Elemwise>(this,
                                              OpIOs{ffn_norm_out, ffn_output},
                                              device(), name + ".ffn.Elemwise")
@@ -170,5 +170,13 @@ void ChatGLMGraph::constuct_llm() {
     //! the last layer
     m_output =
             add_module<HeadModule>(this, input, m_param.n_embd, m_param.n_vocab,
-                                  model_config(), device(), "head", true);
+                                   model_config(), device(), "head", true);
+}
+
+void ChatGLMGraph::post_tokenize(std::vector<Vocab::Id>& input) {
+    //! the begin token
+    input.insert(input.begin(), 5);
+    //! the end token
+    input.push_back(130001);
+    input.push_back(130004);
 }

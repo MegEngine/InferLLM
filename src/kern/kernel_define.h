@@ -15,17 +15,22 @@ using InData = std::vector<const Dtype*>;
 
 enum class KernelID {
     EmbeddingGetInt4Float = 0,
+    EmbeddingGetFloatFloat = 1,
     ElemwiseFloat,
+    ElemwiseFloatScale,
     ElemwiseBroadcastDim0Src1Float,
     NormFloat,
     RmsNormFloat,
     SoftmaxFloat,
     MatmulInt4Float,
+    MatmulFloatFloat,
     MatmulWithHeadStrideFloat,
     HeadBatchedMatmulFloat,
     RopeFloat,
+    GlmRopeFloat,
     ScaleDiagMaskFloat,
     DiagMaskFloat,
+    GlmGmask,
     PermuteFloat,
 };
 

@@ -86,7 +86,7 @@ private:
 class LayerNorm : public OpBase {
 public:
     LayerNorm(Device* device, const std::string& name, OpIOs inputs,
-              size_t embd, bool mul = true, bool bias = false)
+              size_t embd, bool mul = true, bool bias = false, bool rms = true)
             : OpBase(device, name, inputs), m_mul(mul), m_bias(bias) {
         add_outputs(std::make_shared<Tensor>(device, name + "_out0"));
         std::vector<std::shared_ptr<Tensor>> weights;
@@ -107,6 +107,7 @@ public:
 private:
     bool m_mul;
     bool m_bias;
+    bool m_rms;
 };
 
 class MatMul : public OpBase {
@@ -233,13 +234,13 @@ public:
 //! Attention with cached the KvStorage, and output the kv with cache, and q
 //! a*(wq, wk, qv) = q, k, v
 //! out = softmax(q*k)*v
-class Attention : public OpBase {
+class LlamaAttention : public OpBase {
 public:
-    Attention(Device* device, const std::string& name, OpIOs inputs,
-              uint32_t embd, uint32_t rot, uint32_t nr_ctx, uint32_t head,
-              KvStorage* kstorage, KvStorage* vstorage,
-              bool fused_weights = false, bool bias = false,
-              bool rotary_weight = false)
+    LlamaAttention(Device* device, const std::string& name, OpIOs inputs,
+                   uint32_t embd, uint32_t rot, uint32_t nr_ctx, uint32_t head,
+                   KvStorage* kstorage, KvStorage* vstorage, uint32_t layer_id,
+                   bool fused_weights = false, bool bias = false,
+                   bool rotary_weight = false)
             : OpBase(device, name, inputs),
               m_embd(embd),
               m_head(head),
@@ -336,6 +337,120 @@ private:
     uint32_t m_head;
     uint32_t m_rot;
     uint32_t m_ctx;
+    bool m_fused_weights;
+    bool m_bias;
+    bool m_rotary_weights;
+    KvStorage* m_kstorage;
+    KvStorage* m_vstorage;
+};
+
+class GlmAttention : public OpBase {
+public:
+    GlmAttention(Device* device, const std::string& name, OpIOs inputs,
+                 uint32_t embd, uint32_t rot, uint32_t nr_ctx, uint32_t head,
+                 KvStorage* kstorage, KvStorage* vstorage, uint32_t layer_id,
+                 bool fused_weights = false, bool bias = false,
+                 bool rotary_weight = false)
+            : OpBase(device, name, inputs),
+              m_embd(embd),
+              m_head(head),
+              m_rot(rot),
+              m_ctx(nr_ctx),
+              m_layer_id(layer_id),
+              m_fused_weights(fused_weights),
+              m_bias(bias),
+              m_rotary_weights(rotary_weight),
+              m_kstorage(kstorage),
+              m_vstorage(vstorage) {
+        add_outputs(std::make_shared<Tensor>(device, name + "_out"));
+        std::vector<std::shared_ptr<Tensor>> weights;
+        if (m_fused_weights) {
+            auto weight_fused =
+                    std::make_shared<Tensor>(device, name + ".wqkv.weight");
+            weight_fused->set_shape(std::vector<size_t>{m_embd * 3, m_embd});
+            weights.push_back(weight_fused);
+            if (m_bias) {
+                auto weight_bias =
+                        std::make_shared<Tensor>(device, name + ".wqkv.bias");
+                weight_bias->set_shape(std::vector<size_t>{m_embd * 3});
+                weights.push_back(weight_bias);
+            }
+        } else {
+            auto weight_q =
+                    std::make_shared<Tensor>(device, name + ".wq.weight");
+            weight_q->set_shape(std::vector<size_t>{embd, embd});
+            auto weight_k =
+                    std::make_shared<Tensor>(device, name + ".wk.weight");
+            weight_k->set_shape(std::vector<size_t>{embd, embd});
+            auto weight_v =
+                    std::make_shared<Tensor>(device, name + ".wv.weight");
+            weight_v->set_shape(std::vector<size_t>{embd, embd});
+            weights.push_back(weight_q);
+            weights.push_back(weight_k);
+            weights.push_back(weight_v);
+            if (m_bias) {
+                auto bias_q =
+                        std::make_shared<Tensor>(device, name + ".wq.bias");
+                bias_q->set_shape(std::vector<size_t>{embd});
+                auto bias_k =
+                        std::make_shared<Tensor>(device, name + ".wk.bias");
+                bias_k->set_shape(std::vector<size_t>{embd});
+                auto bias_v =
+                        std::make_shared<Tensor>(device, name + ".wv.bias");
+                bias_v->set_shape(std::vector<size_t>{embd});
+                weights.push_back(bias_q);
+                weights.push_back(bias_k);
+                weights.push_back(bias_v);
+            }
+        }
+        if (m_rotary_weights) {
+            auto rotary =
+                    std::make_shared<Tensor>(device, name + ".rotary.inv_freq");
+            rotary->set_shape(std::vector<size_t>{m_head});
+            weights.push_back(rotary);
+        }
+        set_weights(weights);
+    }
+
+    void pre_execute() override{
+        for (auto weight : weights()) {
+            weight->prepare_data();
+        }
+        auto output = outputs()[0];
+        if (output->get_curr_user_count() == 0) {
+            output->prepare_data();
+            output->resume_user_count();
+        }
+        m_kstorage->prepare_data();
+        m_vstorage->prepare_data();
+    }
+
+    void execute(WorkSpace* workspace, uint32_t nr_past) override;
+
+    void end_execute() override {
+        for (auto weight : weights()) {
+            weight->recall_data();
+        }
+        for (auto input : inputs()) {
+            input->decrease_curr_user_count();
+        }
+        auto token_len = inputs()[0]->shape()[0];
+        m_kstorage->add_id(token_len);
+        m_vstorage->add_id(token_len);
+        m_kstorage->recall_data();
+        m_vstorage->recall_data();
+    }
+
+    size_t get_workspace_in_byte() override;
+
+private:
+    uint32_t m_embd;
+    uint32_t m_head;
+    uint32_t m_rot;
+    uint32_t m_ctx;
+    uint32_t m_layer_id;
+    uint32_t m_gmask_position;
+    
     bool m_fused_weights;
     bool m_bias;
     bool m_rotary_weights;

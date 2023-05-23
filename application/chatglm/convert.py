@@ -59,8 +59,8 @@ hparams = {
         "fc_hidden": 16384,
 }
 
-model = AutoModel.from_pretrained("THUDM/chatglm-6b", trust_remote_code=True).half().state_dict()
-dtype = 1 #1 = float16
+model = AutoModel.from_pretrained("THUDM/chatglm-6b", trust_remote_code=True).float().state_dict()
+dtype = 0 #1 = float16
 
 auto_tokenizer = AutoTokenizer.from_pretrained("THUDM/chatglm-6b", trust_remote_code=True)
 _, vocab_file = tempfile.mkstemp()
@@ -144,8 +144,9 @@ for k, v in model.items():
         continue
 
     print("Processing variable: " + name + " with shape: ", shape, " and type: ", v.dtype)
+    if name.endswith("query_key_value.weight") or name.endswith("attention.query_key_value.bias"):
+        v = v.reshape(32, 3, -1).transpose(0, 1).reshape(-1, 4096)
 
-    #data = tf.train.load_variable(dir_model, name).squeeze()
     data = v.numpy().squeeze()
     n_dims = len(data.shape)
 

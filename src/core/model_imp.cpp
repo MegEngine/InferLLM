@@ -21,6 +21,7 @@ void ModelImp::load(const std::string& model_path){
 
 void ModelImp::prefill(const std::string& promote) {
     auto tokens = tokenize(promote, true);
+    m_graph->post_tokenize(tokens);
     for(auto token : tokens) {
         m_last_queue.push_back(token);
         m_last_queue.pop_front();
@@ -32,6 +33,7 @@ void ModelImp::prefill(const std::string& promote) {
 //! decode the user input sentence
 std::string ModelImp::decode(const std::string& user_input, int& token) {
     auto tokens = tokenize(user_input, false);
+    m_graph->post_tokenize(tokens);
     for(auto token : tokens) {
         m_last_queue.push_back(token);
         m_last_queue.pop_front();

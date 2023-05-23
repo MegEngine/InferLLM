@@ -78,13 +78,37 @@ private:
     std::vector<std::shared_ptr<OpBase>> m_oprs;
 };
 
+template <typename Attention>
 class AttentionModule : public OprModuleBase {
 public:
     AttentionModule(Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd,
                     uint32_t head, uint32_t n_rot, uint32_t n_ctx,
                     UserConfig model_config, Device* device,
-                    const std::string& name, bool fused_weights = false,
-                    bool bias = false, bool rotary = false);
+                    const std::string& name, int layer_id,
+                    bool fused_weights = false, bool bias = false,
+                    bool rotary = false)
+            : OprModuleBase(input, device, name),
+              m_embd(embd),
+              m_head(head),
+              m_rot(n_rot),
+              m_graph(graph) {
+        INFER_ASSERT(embd % head == 0, "Embedding and head is not match.");
+        m_index = 0;
+        m_kstorage = make_unique<KvStorage>(std::vector<size_t>{n_ctx, embd},
+                                            model_config.compt_type, device);
+        m_vstorage = make_unique<KvStorage>(std::vector<size_t>{n_ctx, embd},
+                                            model_config.compt_type, device);
+        //! kqv-matmul
+        auto v_out = add_opr<Attention>(device, name, OpIOs{input}, embd, n_rot,
+                                        n_ctx, head, m_kstorage.get(),
+                                        m_vstorage.get(), layer_id,
+                                        fused_weights, bias, rotary)[0];
+        //! matmul proj
+        auto proj_out =
+                add_opr<MatMul>(device, name + ".wo", OpIOs{v_out},
+                                std::vector<size_t>{embd, embd}, bias)[0];
+        set_output(proj_out);
+    }
 
     void reset_ctx() override {
         m_kstorage->reset_id();
@@ -233,6 +257,8 @@ public:
     virtual void constuct_llm() = 0;
 
     virtual void set_weights_alias(){};
+
+    virtual void post_tokenize(std::vector<Vocab::Id>& input) {}
 
     std::shared_ptr<Tensor> m_input;
     std::shared_ptr<Tensor> m_output;

@@ -141,6 +141,29 @@ int main(int argc, char** argv) {
             "'\\'.\n");
 
     // prompt user immediately after the starting prompt has been loaded
+    auto fix_word = [](std::string& word) {
+        auto ret = word;
+        if (word == "<n>" || word == "<n><n>")
+            word = "\n";
+        if (word == "<|tab|>")
+            word = "\t";
+        int pos = word.find("<|blank_");
+        if (pos != -1) {
+            int space_num = atoi(word.substr(8, word.size() - 10).c_str());
+            word = std::string(space_num, ' ');
+        }
+        pos = word.find("▁");
+        if (pos != -1) {
+            word.replace(pos, pos + 3, " ");
+        }
+        // Fix utf-8 garbled characters
+        if (word.length() == 6 && word[0] == '<' &&
+            word[word.length() - 1] == '>' && word[1] == '0' &&
+            word[2] == 'x') {
+            int num = std::stoi(word.substr(3, 2), nullptr, 16);
+            word = static_cast<char>(num);
+        }
+    };
     bool is_interacting = true;
     std::string user_input, output;
     //! main loop
@@ -148,20 +171,21 @@ int main(int argc, char** argv) {
         if (!user_input.empty()) {
             int token;
             output = model->decode(user_input, token);
+            fix_word(output);
             user_input.clear();
             is_interacting = false;
         }
         //! continue to decod to get the next token
         if (!is_interacting) {
             int token;
-            output += model->decode_iter(token);
+            auto o= model->decode_iter(token);
+            output += o;
             printf("%s", output.c_str());
             fflush(stdout);
 
             // token 2 is the end of the instruction
-            if (token == 2) {
+            if (token == 130005) {
                 printf("\n");
-                printf("[end txt]");
                 is_interacting = true;
             }
             output.clear();
@@ -183,14 +207,11 @@ int main(int argc, char** argv) {
                 }
                 if (n_read > 0 && buf[n_read - 1] == '\\') {
                     buf[n_read - 1] = '\n';
-                    buf[n_read] = 0;
                     another_line = true;
                     input.resize(n_read + 1);
                 } else {
-                    buf[n_read] = '\n';
-                    buf[n_read + 1] = 0;
                     another_line = false;
-                    input.resize(n_read + 2);
+                    input.resize(n_read);
                 }
                 user_input += input;
             }
