@@ -132,13 +132,12 @@ int main(int argc, char** argv) {
     std::vector<char> embd;
 
     fprintf(stderr,
-            "== Running in chat mode. ==\n"
+            "== 运行模型中. ==\n"
 #if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__)) || \
         defined(_WIN32)
-            " - Press Ctrl+C to interject at any time.\n"
+            " - 输入 Ctrl+C 将在推出程序.\n"
 #endif
-            " - If you want to submit another line, end your input in "
-            "'\\'.\n");
+            " - 如果你想换行，请在行末输入'\\'符号.\n");
 
     // prompt user immediately after the starting prompt has been loaded
     auto fix_word = [](std::string& word) {
@@ -178,7 +177,8 @@ int main(int argc, char** argv) {
         //! continue to decod to get the next token
         if (!is_interacting) {
             int token;
-            auto o= model->decode_iter(token);
+            auto o = model->decode_iter(token);
+            fix_word(o);
             output += o;
             printf("%s", output.c_str());
             fflush(stdout);
