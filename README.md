@@ -30,6 +30,8 @@ export NDK_ROOT=/path/to/ndk
 ./tools/android_build.sh
 ```
 ### Run InferLLM
+Running ChatGLM model please refer to [ChatGLM model documentation](./application/chatglm/Readme.md).
+
 If it is executed locally, execute `./chatglm -m chatglm-q4.bin -t 4` directly. If you want to execute it on your mobile phone, you can use the adb command to copy alpaca and the model file to your mobile phone, and then execute `adb shell ./chatglm -m chatglm-q4.bin -t 4`. 
 - x86 is：Intel(R) Xeon(R) CPU E5-2620 v4 @ 2.10GHz
 ![x86 running](./asserts/ChatGLM-x86.gif )
