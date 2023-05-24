@@ -128,3 +128,20 @@ std::string format(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
             abort();                                                          \
         }                                                                     \
     } while (0)
+
+#if ENABLE_GPU
+#define CUDA_CHECK(expr)                                                  \
+    do {                                                                  \
+        cudaError_t err = (expr);                                         \
+        if (err != cudaSuccess) {                                         \
+            auto error = cudaGetErrorString(err);                         \
+            INFER_ERROR(                                                  \
+                    "CUDA error %d: %s, at file : %s \n"                  \
+                    "line %d : %s ",                                      \
+                    err, error, __FILE__, __LINE__, __PRETTY_FUNCTION__); \
+            abort();                                                      \
+        }                                                                 \
+    } while (0)
+#else
+#define CUDA_CHECK(expr)
+#endif

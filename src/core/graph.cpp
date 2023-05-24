@@ -1,6 +1,7 @@
 
 #include <sys/time.h>
 #include <fstream>
+#include <iostream>
 #include <regex>
 #include <vector>
 
@@ -22,6 +23,7 @@ void OprModuleBase::execute(WorkSpace* workspace, uint32_t nr_past, bool) {
         gettimeofday(&start, NULL);
 #endif
         opr->execute(workspace, nr_past);
+
 #ifdef INFER_PROFILE
         gettimeofday(&end, NULL);
         long seconds = end.tv_sec - start.tv_sec;
@@ -148,27 +150,31 @@ void Graph::execute(
         bool prefill) {
     if (m_input->dims() == 0 || !same_input_shape(in_token)) {
         m_input->set_shape({in_token.size()}, DType::Int32);
-        if (m_workspace->ptr()) {
-            m_device->free_device(m_workspace->ptr());
-        }
         size_t len = get_workspace_in_byte();
-        if (len > 0) {
+        if(m_workspace->ptr() == nullptr) {
+            auto data = m_device->allocate(len);
+            m_workspace->set_memory(data, len);
+        } else if (m_workspace->ptr() && len > m_workspace->length()) {
+            m_device->free_device(m_workspace->ptr());
             auto data = m_device->allocate(len);
             m_workspace->set_memory(data, len);
         }
     }
-    m_input->set_shared_memory(in_token.data(), in_token.size() * sizeof(int32_t));
-
+    m_input->resume_user_count();
+    m_input->prepare_data();
+    m_device->host2device_copy(
+            m_input->ptr(), in_token.data(), in_token.size() * sizeof(int32_t));
     INFER_ASSERT(
             m_output->length() == logist.size(),
             "output length is not match with logist size");
-    m_output->set_shared_memory(logist.data(), logist.size() * sizeof(float));
-
     for (size_t i = 0; i < m_modules.size(); i++) {
         m_modules[i]->execute(m_workspace.get(), nr_past, prefill);
     }
+    if (!prefill) {
+        m_device->device2host_copy(
+                logist.data(), m_output->ptr(), logist.size() * sizeof(float));
+    }
 }
-
 void Graph::reset_ctx() {
     for (size_t i = 0; i < m_modules.size(); i++) {
         m_modules[i]->reset_ctx();

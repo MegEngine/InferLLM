@@ -175,7 +175,7 @@ int main(int argc, char** argv) {
     fprintf(stderr,
             "== 运行模型中. ==\n"
 #if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__)) || defined(_WIN32)
-            " - 输入 Ctrl+C 将在推出程序.\n"
+            " - 输入 Ctrl+C 将在退出程序.\n"
 #endif
             " - 如果你想换行，请在行末输入'\\'符号.\n");
 

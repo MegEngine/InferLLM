@@ -263,13 +263,12 @@ TaskSet llm_matmul_compute_int4_float(
     return TaskSet{{task1, M}, {task2, N}};
 }
 
-size_t llm_matmul_get_workspace_float(
-        uint32_t nr_thread, uint32_t M, uint32_t N, uint32_t K) {
+size_t llm_matmul_get_workspace_float(uint32_t, uint32_t M, uint32_t N, uint32_t K) {
     return M * K * dtype_in_byte(DType::Int8) / dtype_block_size(DType::Int8);
 }
 
 size_t llm_matmul_get_workspace_float_float(
-        uint32_t nr_thread, uint32_t M, uint32_t N, uint32_t K) {
+        uint32_t, uint32_t M, uint32_t N, uint32_t K) {
     return 0;
 }
 

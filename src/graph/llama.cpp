@@ -1,5 +1,5 @@
 #include "llama.h"
-
+#include <iostream>
 using namespace inferllm;
 
 void LlamaGraph::set_weights_alias() {
@@ -139,6 +139,7 @@ void LlamaGraph::constuct_llm() {
         std::string name = "layers." + std::to_string(i);
         //! layer norm
         std::shared_ptr<Tensor> attention_input = input;
+
         auto norm_out_attention = add_one_opr_module<LayerNorm>(
                                           this, OpIOs{attention_input}, device(),
                                           name + ".attention.norm")

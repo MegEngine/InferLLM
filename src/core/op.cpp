@@ -1,7 +1,8 @@
 #include "op.h"
+#include <fstream>
+#include <iostream>
 #include "kern/kernel.h"
 #include "kern/naive/naive.h"
-
 using namespace inferllm;
 
 void LayerNorm::execute(WorkSpace* workspace, uint32_t nr_past) {
@@ -24,6 +25,7 @@ void LayerNorm::execute(WorkSpace* workspace, uint32_t nr_past) {
         const float* src = input->ptr<float>();
         float* dst = output->ptr<float>();
         float *weight_ptr = nullptr, *bias_ptr = nullptr;
+
         if (m_mul) {
             weight_ptr = weight->ptr<float>();
         }
@@ -58,6 +60,19 @@ void Embedding::execute(WorkSpace*, uint32_t) {
             kernel->operator()<KernelID::EmbeddingGetInt4Float>(
                     weight->ptr(), input->ptr<uint32_t>(), output->ptr<float>(), len,
                     m_embd);
+
+            //         float* temp = new float[len * m_embd];
+
+            //         std::ofstream fout("file1.txt");
+            //         cudaMemcpy(temp,output->ptr<float>(),sizeof(float)*len*m_embd,
+            //         cudaMemcpyDeviceToHost);
+
+            //         for (int i = 0; i < len * m_embd; i++) {
+            //             fout << temp[i] << std::endl;
+            //         }
+            //  fout.close();
+            //         delete[] temp;
+            //         exit(0);
         } else if (weight_type == DType::Float32) {
             kernel->operator()<KernelID::EmbeddingGetFloatFloat>(
                     weight->ptr<float>(), input->ptr<uint32_t>(), output->ptr<float>(),
