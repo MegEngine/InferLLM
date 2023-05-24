@@ -62,7 +62,7 @@ TensorState KvStorage::prepare_data_with_length(uint32_t len) {
         set_shape(shape, dtype());
         size_t len = length_in_byte();
         auto data = device()->aligned_alloc(len);
-        device()->copyd2d(data, old_ptr, old_len);
+        device()->device2device_copy(data, old_ptr, old_len);
 
         device()->aligned_free(old_ptr);
 

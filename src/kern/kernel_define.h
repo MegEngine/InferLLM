@@ -47,11 +47,7 @@ enum class RotMode {
     ModelRotHalf,
 };
 
-enum class KernelType {
-    Naive = 0,
-    Arm = 1,
-    X86 = 2,
-};
+enum class KernelType { Naive = 0, Arm = 1, X86 = 2, GPU = 3 };
 
 struct TaskId {
     uint32_t start;
