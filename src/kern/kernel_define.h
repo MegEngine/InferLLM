@@ -50,6 +50,7 @@ enum class KernelType {
     Naive = 0,
     Arm = 1,
     X86 = 2,
+    GPU=3
 };
 
 struct TaskId {

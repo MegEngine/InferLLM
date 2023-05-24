@@ -2,7 +2,19 @@ cmake_minimum_required(VERSION 3.15.2)
 set(CMAKE_EXPORT_COMPILE_COMMANDS
     ON
     CACHE INTERNAL "")
-project(InferLLM LANGUAGES C CXX)
+project(InferLLM LANGUAGES C CXX CUDA)
+
+set(USE_GPU ON)
+
+
+if(USE_GPU)
+
+
+find_package(CUDA)
+include_directories(${CUDA_INCLUDE_DIRS})
+endif()
+
+
 
 option(ENABLE_ASAN "Build with asan." OFF)
 option(ENABLE_PROFILE "Build with profile information." OFF)
