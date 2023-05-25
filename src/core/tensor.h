@@ -163,8 +163,8 @@ private:
     std::shared_ptr<InputFile> m_file;
     size_t m_file_offset = 0;
 
-    uint32_t m_dims;
-    size_t m_length;
+    uint32_t m_dims = 0;
+    size_t m_length = 0;
     DType m_dtype;
     std::vector<size_t> m_shape;
     std::vector<size_t> m_stride;
