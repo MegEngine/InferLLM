@@ -40,11 +40,11 @@ public:
             : m_name(name), m_config(config) {
         uint32_t nr_thread = config.nr_thread;
 #if INFER_X86
-        m_device = make_unique<Device>(KernelType::X86, nr_thread);
+        m_device = make_unique<CPUDevice>(KernelType::X86, nr_thread);
 #elif INFER_ARM
-        m_device = make_unique<Device>(KernelType::Arm, nr_thread);
+        m_device = make_unique<CPUDevice>(KernelType::Arm, nr_thread);
 #else
-        m_device = make_unique<Device>(KernelType::Naive, nr_thread);
+        m_device = make_unique<CPUDevice>(KernelType::Naive, nr_thread);
 #endif
 
         UserConfig user_config;
