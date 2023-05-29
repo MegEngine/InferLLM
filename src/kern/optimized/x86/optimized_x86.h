@@ -206,7 +206,11 @@ inline float vec_vec_dot_q40_with_q80(const int n, const void* __restrict vx,
         }
 
         // Convert int32_t to float
+#if !defined(__GNUC__) || defined(__INTEL_COMPILER)
         __m256 p = _mm256_cvtepi32_ps( _mm256_set_m128i( i32[0], i32[1] ));
+#else
+        __m256 p = _mm256_cvtepi32_ps( _mm256_insertf128_si256( _mm256_castsi128_si256( i32[1] ), i32[0], 1 ));
+#endif
         // Apply the scale, and accumulate
         acc = _mm256_add_ps(_mm256_mul_ps( d, p ), acc);
     }
