@@ -14,7 +14,7 @@ namespace inferllm {
 
 
 
-void* CPUDevice::aligned_alloc(size_t size) {
+void* Device::aligned_alloc(size_t size) {
 #ifdef WIN32
     return _aligned_malloc(size, ALIGN_SIZE);
 #elif defined(__ANDROID__) || defined(ANDROID)
@@ -27,7 +27,7 @@ void* CPUDevice::aligned_alloc(size_t size) {
 #endif
 }
 
-void CPUDevice::aligned_free(void* ptr) {
+void Device::aligned_free(void* ptr) {
 #ifdef WIN32
     _aligned_free(ptr);
 #else
