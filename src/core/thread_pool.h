@@ -7,8 +7,8 @@
 #include <thread>
 #include <vector>
 
-#include "utils.h"
 #include "kern/kernel_define.h"
+#include "utils.h"
 
 namespace inferllm {
 
@@ -63,4 +63,4 @@ private:
     std::mutex m_mutex;
 };
 
-}
+}  // namespace inferllm

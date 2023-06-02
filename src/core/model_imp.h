@@ -1,14 +1,14 @@
 #pragma once
 
-#include <string>
-#include <memory>
-#include <map>
 #include <list>
+#include <map>
+#include <memory>
+#include <string>
 
-#include "model.h"
 #include "device.h"
 #include "graph.h"
-#include "kern/kernel_define.h" 
+#include "kern/kernel_define.h"
+#include "model.h"
 
 namespace inferllm {
 
@@ -43,6 +43,8 @@ public:
         m_device = make_unique<CPUDevice>(KernelType::X86, nr_thread);
 #elif INFER_ARM
         m_device = make_unique<CPUDevice>(KernelType::Arm, nr_thread);
+#elif ENABLE_GPU
+        m_device = make_unique<GPUDevice>();
 #else
         m_device = make_unique<CPUDevice>(KernelType::Naive, nr_thread);
 #endif
@@ -56,8 +58,9 @@ public:
     void load(const std::string& model_path);
 
     //! allocate memory for the model or init its param
-    void init(uint32_t top_k, float top_p, float temp, float repeat_penalty,
-              int repeat_last_n, int32_t seed) {
+    void init(
+            uint32_t top_k, float top_p, float temp, float repeat_penalty,
+            int repeat_last_n, int32_t seed) {
         m_top_k = top_k;
         m_top_p = top_p;
         m_temp = temp;

@@ -13,8 +13,9 @@ void Model::load(const std::string& model_path) {
 }
 
 //! allocate memory for the model
-void Model::init(uint32_t top_k, float top_p, float temp,
-                 float repeat_penalty , int repeat_last_n, int32_t seed) {
+void Model::init(
+        uint32_t top_k, float top_p, float temp, float repeat_penalty,
+        int repeat_last_n, int32_t seed) {
     m_model_imp->init(top_k, top_p, temp, repeat_penalty, repeat_last_n, seed);
 }
 

@@ -7,7 +7,7 @@
 
 #define PI (3.1415)
 #define PGELU (0.044715)
-#define INFER_ATTRIBUTE_TARGET(simd)   __attribute__((target(simd)))
+#define INFER_ATTRIBUTE_TARGET(simd) __attribute__((target(simd)))
 namespace inferllm {
 
 template <class Dtype>
@@ -46,12 +46,7 @@ enum class RotMode {
     Mode1,
 };
 
-enum class KernelType {
-    Naive = 0,
-    Arm = 1,
-    X86 = 2,
-    GPU=3
-};
+enum class KernelType { Naive = 0, Arm = 1, X86 = 2, GPU = 3 };
 
 struct TaskId {
     uint32_t start;
@@ -75,7 +70,7 @@ struct BlockQ40 {
 
 #define QK80 32
 struct BlockQ80 {
-    float d;           // delta
+    float d;          // delta
     int8_t qs[QK80];  // nibbles
 };
 }  // namespace inferllm

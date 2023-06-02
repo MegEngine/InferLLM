@@ -11,9 +11,6 @@
 // using namespace inferllm;
 namespace inferllm {
 
-
-
-
 void* Device::aligned_alloc(size_t size) {
 #ifdef WIN32
     return _aligned_malloc(size, ALIGN_SIZE);
@@ -81,4 +78,3 @@ CPUDevice::~CPUDevice() {
 #endif
 }
 }  // namespace inferllm
-

@@ -4,24 +4,23 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS
     CACHE INTERNAL "")
 project(InferLLM LANGUAGES C CXX CUDA)
 
-set(USE_GPU ON)
-
-
-if(USE_GPU)
-
-
-find_package(CUDA)
-include_directories(${CUDA_INCLUDE_DIRS})
-endif()
-
 
 
 option(ENABLE_ASAN "Build with asan." OFF)
 option(ENABLE_PROFILE "Build with profile information." OFF)
 option(ENABLE_DOT "Build with Arm dotprod." OFF)
 option(ENABLE_FP16 "Build with Arm FP16." OFF)
-
+option(ENABLE_GPU "Build with GPU." ON)
 set(INFER_ARCH x86_64 CACHE STRING "Architecture to be built.")
+
+
+if(ENABLE_GPU)
+  add_definitions(-DENABLE_GPU)
+  find_package(CUDA)
+  include_directories(${CUDA_INCLUDE_DIRS})
+endif()
+
+
 
 if(CMAKE_TOOLCHAIN_FILE)
   message(STATUS "We are cross compiling for android.")
@@ -52,7 +51,7 @@ if(ENABLE_FP16)
     set(CMAKE_CXX_FLAGS " -march=armv8.2-a+fp16 ${CMAKE_CXX_FLAGS}")
 endif()
 
-file(GLOB_RECURSE SRC src/*/*.cpp src/*/*.h src/*.cpp)
+file(GLOB_RECURSE SRC src/*/*.cpp src/*/*.h src/*.cpp src/*/*.cu)
 add_library(InferLLM STATIC ${SRC})
 
 add_library(InferLLMShared SHARED  ${SRC})

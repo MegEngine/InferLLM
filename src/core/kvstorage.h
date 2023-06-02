@@ -34,8 +34,8 @@ public:
         INFER_ASSERT(id + m_store_id < m_total_id, "KvStorage add id error!");
         m_store_id += id;
         m_curr_data = static_cast<char*>(ptr()) +
-                      static_cast<size_t>((stride()[0] * m_store_id *
-                                           dtype_in_byte(dtype())));
+                      static_cast<size_t>(
+                              (stride()[0] * m_store_id * dtype_in_byte(dtype())));
         return m_store_id;
     }
 

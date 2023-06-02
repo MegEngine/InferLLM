@@ -7,80 +7,17 @@
 #include <iostream>
 using namespace std;
 
-// elementwise implementation copyed from
-// https://github.com/Oneflow-Inc/oneflow/blob/master/oneflow/core/cuda/elementwise.cuh
+
+
 namespace inferllm {
 namespace gpu {
 
-constexpr int kBlockSize = 256;
-constexpr int kNumWaves = 32;
-
-inline cudaError_t GetNumBlocks(int64_t n, int* num_blocks) {
-    int dev;
-    {
-        cudaError_t err = cudaGetDevice(&dev);
-        if (err != cudaSuccess) {
-            return err;
-        }
-    }
-    int sm_count;
-    {
-        cudaError_t err =
-                cudaDeviceGetAttribute(&sm_count, cudaDevAttrMultiProcessorCount, dev);
-        if (err != cudaSuccess) {
-            return err;
-        }
-    }
-    int tpm;
-    {
-        cudaError_t err = cudaDeviceGetAttribute(
-                &tpm, cudaDevAttrMaxThreadsPerMultiProcessor, dev);
-        if (err != cudaSuccess) {
-            return err;
-        }
-    }
-    *num_blocks = std::max<int>(
-            1, std::min<int64_t>(
-                       (n + kBlockSize - 1) / kBlockSize,
-                       sm_count * tpm / kBlockSize * kNumWaves));
-    return cudaSuccess;
-}
-
-inline int GET_BLOCKS(const int N) {
-    return (N + CUDA_NUM_THREADS - 1) / CUDA_NUM_THREADS;
-}
-
-constexpr int kMaxPackBytes = 128 / 8;
-constexpr int kMaxPackSize = 8;
-
-template <typename Function, typename... Args>
-__global__ void __launch_bounds__(kBlockSize)
-        ApplyFunction(Function functor, int64_t n, float* ret, Args... args) {
-    const int global_tid = blockIdx.x * kBlockSize + threadIdx.x;
-    for (int64_t i = global_tid; i < n; i += blockDim.x * gridDim.x) {
-        ret[i] = functor(i, args...);
-    }
-}
-
-template <typename Function, typename... Args>
-cudaError_t LaunchKernel(Function fun, int64_t n, float* ret, Args... args) {
-    int num_blocks;
-    {
-        cudaError_t err = GetNumBlocks(n, &num_blocks);
-        if (err != cudaSuccess) {
-            return err;
-        }
-    }
-    ApplyFunction<<<num_blocks, kBlockSize>>>(fun, n, ret, args...);
-    return cudaPeekAtLastError();
-}
 
 // CUDA: library error reporting.
-const char* cublasGetErrorString(cublasStatus_t error);
-const char* curandGetErrorString(curandStatus_t error);
+// const char* cublasGetErrorString(cublasStatus_t error);
+// const char* curandGetErrorString(curandStatus_t error);
 
 // CUDA: use 512 threads per block
-const int CUDA_NUM_THREADS = 512;
 
 // CUDA: number of blocks for threads.
 
@@ -152,6 +89,7 @@ void llm_matmul_compute_with_head_stride_float(
 void llm_head_batched_matmul_compute_float(
         float* dst, const float* v, const float* qk, uint32_t seqlen, uint32_t embd,
         uint32_t head, uint32_t nr_past);
+
 template <KernelID Id, typename... Args>
 struct Comp {
     static void get_all_task(Args... args);
@@ -172,18 +110,20 @@ struct Space {
 #undef PartialImplementSpace
 #endif
 
-#define PartialImplementKernel(kernel_id, fun)                                         \
-    template <typename... Args>                                                        \
-    struct Comp<KernelID::kernel_id, Args...> {                                        \
-        static void get_all_task(Args... args) {                                       \
-            return fun(std::forward<Args>(args)...);                                   \
-        }                                                                              \
+#define PartialImplementKernel(kernel_id, fun)       \
+    template <typename... Args>                      \
+    struct Comp<KernelID::kernel_id, Args...> {      \
+        static void get_all_task(Args... args) {     \
+            return fun(std::forward<Args>(args)...); \
+        }                                            \
     };
 
-#define PartialImplementSpace(kernel_id, fun)                                          \
-    template <typename... Args>                                                        \
-    struct Space<KernelID::kernel_id, Args...> {                                       \
-        static size_t get(Args... args) { return fun(std::forward<Args>(args)...); }   \
+#define PartialImplementSpace(kernel_id, fun)        \
+    template <typename... Args>                      \
+    struct Space<KernelID::kernel_id, Args...> {     \
+        static size_t get(Args... args) {            \
+            return fun(std::forward<Args>(args)...); \
+        }                                            \
     };
 
 namespace inferllm {
@@ -192,26 +132,28 @@ PartialImplementKernel(ElemwiseFloat, llm_elemwise_compute_float);
 PartialImplementKernel(ElemwiseFloatScale, llm_elemwise_compute_float_scale);
 // PartialImplementKernel(ElemwiseBroadcastDim0Src1Float,
 //                        llm_elemwise_broadcast_dim0_src1_compute_float);
-// PartialImplementKernel(NormFloat, llm_norm_compute_float);
-// PartialImplementKernel(RmsNormFloat, llm_rms_norm_compute_float);
-// PartialImplementKernel(EmbeddingGetInt4Float, llm_embedding_get_int4_float);
-// PartialImplementKernel(EmbeddingGetFloatFloat, llm_embedding_get_float_float);
-// PartialImplementKernel(SoftmaxFloat, llm_softmax_compute_float);
-// PartialImplementKernel(MatmulInt4Float, llm_matmul_compute_int4_float);
-// PartialImplementKernel(MatmulFloatFloat, llm_matmul_compute_float_float);
-// PartialImplementKernel(MatmulWithHeadStrideFloat,
-//                        llm_matmul_compute_with_head_stride_float);
-// PartialImplementKernel(HeadBatchedMatmulFloat,
-//                        llm_head_batched_matmul_compute_float);
-// PartialImplementKernel(DiagMaskFloat, llm_diag_mask_inf_float);
-// PartialImplementKernel(RopeFloat, llm_rope_compute_float);
-// PartialImplementKernel(GlmRopeFloat, llm_glm_rope_compute_float);
-// PartialImplementKernel(ScaleDiagMaskFloat, llm_scale_diag_mask_inf_float);
-// PartialImplementKernel(GlmGmask, llm_glm_gmask_inf_float);
-// PartialImplementKernel(PermuteFloat, llm_permute_compute_float);
 
-// PartialImplementSpace(MatmulInt4Float, llm_matmul_get_workspace_float);
-// PartialImplementSpace(MatmulFloatFloat, llm_matmul_get_workspace_float_float);
+
+PartialImplementKernel(NormFloat, llm_norm_compute_float);
+PartialImplementKernel(RmsNormFloat, llm_rms_norm_compute_float);
+PartialImplementKernel(EmbeddingGetInt4Float, llm_embedding_get_int4_float);
+PartialImplementKernel(EmbeddingGetFloatFloat, llm_embedding_get_float_float);
+PartialImplementKernel(SoftmaxFloat, llm_softmax_compute_float);
+PartialImplementKernel(MatmulInt4Float, llm_matmul_compute_int4_float);
+// PartialImplementKernel(MatmulFloatFloat, llm_matmul_compute_float_float);
+PartialImplementKernel(MatmulWithHeadStrideFloat,
+                       llm_matmul_compute_with_head_stride_float);
+PartialImplementKernel(HeadBatchedMatmulFloat,
+                       llm_head_batched_matmul_compute_float);
+PartialImplementKernel(DiagMaskFloat, llm_diag_mask_inf_float);
+PartialImplementKernel(RopeFloat, llm_rope_compute_float);
+// PartialImplementKernel(GlmRopeFloat, llm_glm_rope_compute_float);
+PartialImplementKernel(ScaleDiagMaskFloat, llm_scale_diag_mask_inf_float);
+// PartialImplementKernel(GlmGmask, llm_glm_gmask_inf_float);
+PartialImplementKernel(PermuteFloat, llm_permute_compute_float);
+
+PartialImplementSpace(MatmulInt4Float, llm_matmul_get_workspace_float);
+PartialImplementSpace(MatmulFloatFloat, llm_matmul_get_workspace_float_float);
 
 #undef PartialImplementKernel
 #undef PartialImplementSpace
