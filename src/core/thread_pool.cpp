@@ -3,9 +3,7 @@
 using namespace inferllm;
 
 ThreadPool::ThreadPool(uint32_t threads_num)
-        : m_nr_threads(threads_num),
-          m_stop{false},
-          m_active{false} {
+        : m_nr_threads(threads_num), m_stop{false}, m_active{false} {
     if (threads_num < 1) {
         m_nr_threads = 1;
     }
@@ -23,14 +21,14 @@ ThreadPool::ThreadPool(uint32_t threads_num)
                     while (m_active) {
                         //! if the thread should work
                         if (m_workers[i]->work_flag) {
-                            //printf("thread %d work form %d to %d\n", i,
+                            // printf("thread %d work form %d to %d\n", i,
                             //        i * m_task_per_thread,
                             //        (i + 1) * m_task_per_thread);
-                            m_task(TaskId{i * m_task_per_thread,
-                                          std::min((i + 1) * m_task_per_thread,
-                                                   m_nr_task),
-                                          i});
-                            //printf("thread %d finished\n", i);
+                            m_task(TaskId{
+                                    i * m_task_per_thread,
+                                    std::min((i + 1) * m_task_per_thread, m_nr_task),
+                                    i});
+                            // printf("thread %d finished\n", i);
                             //! Flag worker is finished
                             m_workers[i]->work_flag = false;
                         }
@@ -40,8 +38,7 @@ ThreadPool::ThreadPool(uint32_t threads_num)
                     {
                         std::unique_lock<std::mutex> lock(m_mutex);
                         if (!m_stop && !m_active) {
-                            m_cv.wait(lock,
-                                      [this] { return m_stop || m_active; });
+                            m_cv.wait(lock, [this] { return m_stop || m_active; });
                         }
                     }
                 }
@@ -65,11 +62,11 @@ void ThreadPool::add_task(const MultiThreadingTask& task, uint32_t nr_task) {
         }
         //! Main thread working
         uint32_t start = (m_nr_threads - 1) * m_task_per_thread;
-        //printf("main threads start\n");
+        // printf("main threads start\n");
         m_task({start, nr_task, m_nr_threads - 1});
         //! make sure all threads done
         sync();
-        //printf("all threads finished\n");
+        // printf("all threads finished\n");
     }
 }
 

@@ -1,19 +1,19 @@
 #pragma once
 
+#include <cstdint>
 #include <cstdio>
 #include <string>
-#include <cstdint>
 
 #ifdef __has_include
-    #if __has_include(<unistd.h>)
-        #include <unistd.h>
-        #if defined(_POSIX_MAPPED_FILES)
-            #include <sys/mman.h>
-        #endif
-        #if defined(_POSIX_MEMLOCK_RANGE)
-            #include <sys/resource.h>
-        #endif
-    #endif
+#if __has_include(<unistd.h>)
+#include <unistd.h>
+#if defined(_POSIX_MAPPED_FILES)
+#include <sys/mman.h>
+#endif
+#if defined(_POSIX_MEMLOCK_RANGE)
+#include <sys/resource.h>
+#endif
+#endif
 #endif
 
 namespace inferllm {

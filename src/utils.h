@@ -5,11 +5,11 @@
 #include <fstream>
 #include <list>
 #include <map>
+#include <memory>
 #include <random>
 #include <string>
 #include <thread>
 #include <vector>
-#include <memory>
 #include "file.h"
 
 namespace inferllm {
@@ -79,15 +79,12 @@ public:
 //   - consider only the top K tokens
 //   - from them, consider only the top tokens with cumulative probability > P
 //
-Vocab::Id llama_sample_top_p_top_k(const Vocab& vocab, const float* logits,
-                                   std::list<Vocab::Id>& last_n_tokens,
-                                   double repeat_penalty, int top_k,
-                                   double top_p, double temp,
-                                   std::mt19937& rng);
+Vocab::Id llama_sample_top_p_top_k(
+        const Vocab& vocab, const float* logits, std::list<Vocab::Id>& last_n_tokens,
+        double repeat_penalty, int top_k, double top_p, double temp, std::mt19937& rng);
 
 // filer to top K tokens from list of logits
-void sample_top_k(std::vector<std::pair<double, Vocab::Id>>& logits_id,
-                  int top_k);
+void sample_top_k(std::vector<std::pair<double, Vocab::Id>>& logits_id, int top_k);
 
 std::string format(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 

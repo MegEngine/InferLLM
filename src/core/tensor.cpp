@@ -1,8 +1,8 @@
 #include "tensor.h"
+#include "../kern/kernel_define.h"
+#include "gpu_utils.cuh"
 #include "memory.h"
 #include "utils.h"
-
-
 using namespace inferllm;
 
 float inferllm::dtype_in_byte(DType dtype) {
@@ -50,21 +50,38 @@ TensorState Tensor::prepare_data() {
         if (m_file) {
             //! if the tensor data is from file, we can map the memory from file
             //! or read the data from file
-            if (m_file->enable_mmap()) {
+            if (m_device->type() == KernelType::GPU) {
+                auto temp_ptr = m_file->get_mmap_data(length, m_file_offset);
+
+                m_data = m_device->allocate(length);
+                cudaMemcpy(
+                        (float*)m_data, (float*)temp_ptr, length,
+                        cudaMemcpyHostToDevice);
+            } else {
                 m_data = m_file->get_mmap_data(length, m_file_offset);
-            } else if (m_data == nullptr) {
+            }
+        } else if (m_data == nullptr) {
+            if (m_device->type() == KernelType::GPU) {
+                m_data = m_device->allocate(length);
+
+                auto temp_ptr = new float[length];
+
+                m_file->read_data(temp_ptr, length, m_file_offset);
+                cudaMemcpy(
+                        (float*)m_data, (float*)temp_ptr, length,
+                        cudaMemcpyHostToDevice);
+            } else {
                 m_data = m_device->allocate(length);
                 m_file->read_data(m_data, length, m_file_offset);
             }
-            //! if the tensor data is from device
         } else {
+            //! if the tensor data is from device
             m_data = m_device->allocate(length);
         }
     }
     m_state = TensorState::Own;
     return m_state;
 }
-
 TensorState Tensor::recall_data() {
     if (m_shared) {
         return m_state;
@@ -79,8 +96,9 @@ TensorState Tensor::recall_data() {
 }
 
 void Tensor::set_shared_memory(void* data, size_t size) {
-    INFER_ASSERT(data == nullptr || size >= length_in_byte(),
-                 "the memory set to tensor is not enough");
+    INFER_ASSERT(
+            data == nullptr || size >= length_in_byte(),
+            "the memory set to tensor is not enough");
     m_state = TensorState::Own;
     m_data = data;
     m_shared = true;

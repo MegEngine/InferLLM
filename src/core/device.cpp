@@ -8,7 +8,8 @@
 
 #define ALIGN_SIZE (32)
 
-using namespace inferllm;
+// using namespace inferllm;
+namespace inferllm {
 
 void* Device::aligned_alloc(size_t size) {
 #ifdef WIN32
@@ -31,7 +32,7 @@ void Device::aligned_free(void* ptr) {
 #endif
 }
 
-void* Device::allocate(size_t len) {
+void* CPUDevice::allocate(size_t len) {
 #ifdef ENABLE_ASAN
     return aligned_alloc(len);
 #else
@@ -52,25 +53,28 @@ void* Device::allocate(size_t len) {
 #endif
 }
 
-void Device::free_device(void* ptr) {
+void CPUDevice::free_device(void* ptr) {
 #ifdef ENABLE_ASAN
     aligned_free(ptr);
 #else
-    INFER_ASSERT(m_alloc_memory.count(ptr) == 1,
-                 "memory is not allocated by the DeviceCPU.");
+    INFER_ASSERT(
+            m_alloc_memory.count(ptr) == 1,
+            "memory is not allocated by the DeviceCPU.");
     size_t len = m_alloc_memory[ptr];
     m_free_memory[len].push_back(ptr);
 #endif
 }
 
-Device::~Device() {
+CPUDevice::~CPUDevice() {
 #ifndef ENABLE_ASAN
     for (auto it : m_free_memory) {
         for (auto ptr : it.second) {
-            INFER_ASSERT(m_alloc_memory.count(ptr) == 1,
-                         "memory is not allocated by the DeviceCPU.");
+            INFER_ASSERT(
+                    m_alloc_memory.count(ptr) == 1,
+                    "memory is not allocated by the DeviceCPU.");
             aligned_free(ptr);
         }
     }
 #endif
 }
+}  // namespace inferllm
