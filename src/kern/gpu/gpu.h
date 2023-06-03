@@ -54,11 +54,9 @@ void llm_matmul_compute_float_float(
         float* dst, const float* src0, const float* bias, const float* src1, uint32_t M,
         uint32_t N, uint32_t K, void* workspace, uint32_t size);
 
-size_t llm_matmul_get_workspace_float(
-        uint32_t nr_thread, uint32_t M, uint32_t N, uint32_t K);
+size_t llm_matmul_get_workspace_float( uint32_t M, uint32_t N, uint32_t K);
 
-size_t llm_matmul_get_workspace_float_float(
-        uint32_t nr_thread, uint32_t M, uint32_t N, uint32_t K);
+size_t llm_matmul_get_workspace_float_float( uint32_t M, uint32_t N, uint32_t K);
 
 void llm_rope_compute_float(
         float* dst, const float* src0, uint32_t n_past, uint32_t n_rot, RotMode m,
@@ -130,26 +128,24 @@ namespace inferllm {
 namespace gpu {
 PartialImplementKernel(ElemwiseFloat, llm_elemwise_compute_float);
 PartialImplementKernel(ElemwiseFloatScale, llm_elemwise_compute_float_scale);
-// PartialImplementKernel(ElemwiseBroadcastDim0Src1Float,
-//                        llm_elemwise_broadcast_dim0_src1_compute_float);
-
-
+PartialImplementKernel(ElemwiseBroadcastDim0Src1Float,
+                       llm_elemwise_broadcast_dim0_src1_compute_float);
 PartialImplementKernel(NormFloat, llm_norm_compute_float);
 PartialImplementKernel(RmsNormFloat, llm_rms_norm_compute_float);
 PartialImplementKernel(EmbeddingGetInt4Float, llm_embedding_get_int4_float);
 PartialImplementKernel(EmbeddingGetFloatFloat, llm_embedding_get_float_float);
 PartialImplementKernel(SoftmaxFloat, llm_softmax_compute_float);
 PartialImplementKernel(MatmulInt4Float, llm_matmul_compute_int4_float);
-// PartialImplementKernel(MatmulFloatFloat, llm_matmul_compute_float_float);
+PartialImplementKernel(MatmulFloatFloat, llm_matmul_compute_float_float);
 PartialImplementKernel(MatmulWithHeadStrideFloat,
                        llm_matmul_compute_with_head_stride_float);
 PartialImplementKernel(HeadBatchedMatmulFloat,
                        llm_head_batched_matmul_compute_float);
 PartialImplementKernel(DiagMaskFloat, llm_diag_mask_inf_float);
 PartialImplementKernel(RopeFloat, llm_rope_compute_float);
-// PartialImplementKernel(GlmRopeFloat, llm_glm_rope_compute_float);
+PartialImplementKernel(GlmRopeFloat, llm_glm_rope_compute_float);
 PartialImplementKernel(ScaleDiagMaskFloat, llm_scale_diag_mask_inf_float);
-// PartialImplementKernel(GlmGmask, llm_glm_gmask_inf_float);
+PartialImplementKernel(GlmGmask, llm_glm_gmask_inf_float);
 PartialImplementKernel(PermuteFloat, llm_permute_compute_float);
 
 PartialImplementSpace(MatmulInt4Float, llm_matmul_get_workspace_float);

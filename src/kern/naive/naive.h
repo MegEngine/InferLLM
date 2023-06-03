@@ -43,10 +43,10 @@ TaskSet llm_matmul_compute_float_float(float* dst, const float* src0,
                                       uint32_t M, uint32_t N, uint32_t K,
                                       void* workspace, uint32_t size);
 
-size_t llm_matmul_get_workspace_float(uint32_t nr_thread, uint32_t M,
+size_t llm_matmul_get_workspace_float( uint32_t M,
                                       uint32_t N, uint32_t K);
 
-size_t llm_matmul_get_workspace_float_float(uint32_t nr_thread, uint32_t M,
+size_t llm_matmul_get_workspace_float_float(uint32_t M,
                                             uint32_t N, uint32_t K);
 
 TaskSet llm_rope_compute_float(float* dst, const float* src0, uint32_t n_past,

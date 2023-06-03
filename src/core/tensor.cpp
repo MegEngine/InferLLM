@@ -48,34 +48,33 @@ TensorState Tensor::prepare_data() {
     size_t length = length_in_byte();
     if (!m_data && m_state == TensorState::OutSide) {
         if (m_file) {
-            //! if the tensor data is from file, we can map the memory from file
-            //! or read the data from file
-            if (m_device->type() == KernelType::GPU) {
-                auto temp_ptr = m_file->get_mmap_data(length, m_file_offset);
-
-                m_data = m_device->allocate(length);
-                cudaMemcpy(
-                        (float*)m_data, (float*)temp_ptr, length,
-                        cudaMemcpyHostToDevice);
-            } else {
-                m_data = m_file->get_mmap_data(length, m_file_offset);
-            }
-        } else if (m_data == nullptr) {
-            if (m_device->type() == KernelType::GPU) {
-                m_data = m_device->allocate(length);
-
-                auto temp_ptr = new float[length];
-
-                m_file->read_data(temp_ptr, length, m_file_offset);
-                cudaMemcpy(
-                        (float*)m_data, (float*)temp_ptr, length,
-                        cudaMemcpyHostToDevice);
-            } else {
-                m_data = m_device->allocate(length);
-                m_file->read_data(m_data, length, m_file_offset);
+            if (m_file->enable_mmap()) {
+                if (m_device->type() == KernelType::GPU) {
+                    auto temp_ptr = m_file->get_mmap_data(length, m_file_offset);
+                    m_data = m_device->allocate(length);
+                    cudaError_t error = cudaMemcpy(
+                            m_data, temp_ptr, length, cudaMemcpyHostToDevice);
+                    if (error != cudaSuccess) {
+                        const char* errorMessage = cudaGetErrorString(error);
+                        printf("CUDA Memcpy Error: %s\n", errorMessage);
+                    }
+                } else {
+                    m_data = m_file->get_mmap_data(length, m_file_offset);
+                }
+            } else if (m_data == nullptr) {
+                if (m_device->type() == KernelType::GPU) {
+                    m_data = m_device->allocate(length);
+                    auto temp_ptr = new float[length];
+                    m_file->read_data(temp_ptr, length, m_file_offset);
+                    cudaMemcpy(
+                            (float*)m_data, (float*)temp_ptr, length,
+                            cudaMemcpyHostToDevice);
+                } else {
+                    m_data = m_device->allocate(length);
+                    m_file->read_data(m_data, length, m_file_offset);
+                }
             }
         } else {
-            //! if the tensor data is from device
             m_data = m_device->allocate(length);
         }
     }

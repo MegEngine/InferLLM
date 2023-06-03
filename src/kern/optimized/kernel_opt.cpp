@@ -215,7 +215,7 @@ TaskSet llm_matmul_compute_int4_float(float* dst, const void* src0,
     return TaskSet{{task1, M}, {task2, N}};
 }
 
-size_t llm_matmul_get_workspace_float(uint32_t, uint32_t M, uint32_t N,
+size_t llm_matmul_get_workspace_float( uint32_t M, uint32_t N,
                                       uint32_t K) {
     return sizeof(float) * K * M;
 }

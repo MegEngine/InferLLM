@@ -8,11 +8,11 @@
 #include "utils.h"
 
 #ifdef ENABLE_GPU
-#include <cublas_v2.h>
-#include <cuda.h>
-#include <cuda_runtime.h>
-#include <curand.h>
-#include <driver_types.h>
+  #include <cublas_v2.h>
+  #include <cuda.h>
+  #include <cuda_runtime.h>
+  #include <curand.h>
+  #include <driver_types.h>
 #endif
 
 namespace inferllm {
@@ -60,7 +60,7 @@ private:
     std::unique_ptr<ThreadPool> m_thread_pool;
 };
 
-class GPUDevice : Device {
+class GPUDevice : public Device {
 public:
     GPUDevice() : Device() { m_kernel = make_unique<Kernel>(KernelType::GPU); }
 

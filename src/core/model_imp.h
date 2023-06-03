@@ -39,15 +39,15 @@ public:
     ModelImp(const ModelConfig& config, const std::string& name)
             : m_name(name), m_config(config) {
         uint32_t nr_thread = config.nr_thread;
-#if INFER_X86
-        m_device = make_unique<CPUDevice>(KernelType::X86, nr_thread);
-#elif INFER_ARM
-        m_device = make_unique<CPUDevice>(KernelType::Arm, nr_thread);
-#elif ENABLE_GPU
+// #if INFER_X86
+//         m_device = make_unique<CPUDevice>(KernelType::X86, nr_thread);
+// #elif INFER_ARM
+        // m_device = make_unique<CPUDevice>(KernelType::Arm, nr_thread);
+// #elif ENABLE_GPU
         m_device = make_unique<GPUDevice>();
-#else
-        m_device = make_unique<CPUDevice>(KernelType::Naive, nr_thread);
-#endif
+// #else
+        // m_device = make_unique<CPUDevice>(KernelType::Naive, nr_thread);
+// #endif
 
         UserConfig user_config;
         user_config.compt_type = dtype_from_str(config.compt_type);
