@@ -2,9 +2,10 @@
 #include "graph.h"
 #include <sys/time.h>
 #include <fstream>
+#include <iostream>
 #include <regex>
 #include <vector>
-
+#include "gpu_utils.cuh"
 using namespace inferllm;
 
 void OprModuleBase::deduce_output_shape() {
@@ -21,6 +22,18 @@ void OprModuleBase::execute(WorkSpace* workspace, uint32_t nr_past, bool) {
         gettimeofday(&start, NULL);
 #endif
         opr->execute(workspace, nr_past);
+
+        // auto len = output()->length();
+        // float* temp = new float[len];
+        // cudaMemcpy(temp, output()->ptr(), sizeof(float) * len, cudaMemcpyDeviceToHost);
+        // std::ofstream fout(output()->name() + ".txt");
+
+
+        // for (int i = 0; i < output()->length(); i++) {
+        //     fout << temp[i] << std::endl;
+        // }
+        // delete[] temp;
+
 #ifdef INFER_PROFILE
         gettimeofday(&end, NULL);
         long seconds = end.tv_sec - start.tv_sec;
@@ -155,18 +168,45 @@ void Graph::execute(
             m_workspace->set_memory(data, len);
         }
     }
-    m_input->set_shared_memory(in_token.data(), in_token.size() * sizeof(int32_t));
 
-    INFER_ASSERT(
-            m_output->length() == logist.size(),
-            "output length is not match with logist size");
-    m_output->set_shared_memory(logist.data(), logist.size() * sizeof(float));
+    if (m_device->type() == KernelType::GPU) {
+        float *gpu_input, *gpu_output;
 
-    for (size_t i = 0; i < m_modules.size(); i++) {
-        m_modules[i]->execute(m_workspace.get(), nr_past, prefill);
+        cudaMalloc(&gpu_input, in_token.size() * sizeof(int32_t));
+        cudaMalloc(&gpu_output, logist.size() * sizeof(float));
+
+        cudaMemcpy(
+                gpu_input, in_token.data(), in_token.size() * sizeof(int32_t),
+                cudaMemcpyHostToDevice);
+
+        m_input->set_shared_memory(gpu_input, in_token.size() * sizeof(int32_t));
+        m_output->set_shared_memory(gpu_output, logist.size() * sizeof(float));
+
+        for (size_t i = 0; i < m_modules.size(); i++) {
+            m_modules[i]->execute(m_workspace.get(), nr_past, prefill);
+        }
+        float* temp = new float[logist.size()];
+        cudaMemcpy(
+                temp, gpu_output, logist.size() * sizeof(float),
+                cudaMemcpyDeviceToHost);
+
+        for (int i = 0; i < logist.size(); i++) {
+            std::cout << "logist: " << temp[i] << std::endl;
+        }
+        delete[] temp;
+
+    } else {
+        m_input->set_shared_memory(in_token.data(), in_token.size() * sizeof(int32_t));
+
+        INFER_ASSERT(
+                m_output->length() == logist.size(),
+                "output length is not match with logist size");
+        m_output->set_shared_memory(logist.data(), logist.size() * sizeof(float));
+        for (size_t i = 0; i < m_modules.size(); i++) {
+            m_modules[i]->execute(m_workspace.get(), nr_past, prefill);
+        }
     }
 }
-
 void Graph::reset_ctx() {
     for (size_t i = 0; i < m_modules.size(); i++) {
         m_modules[i]->reset_ctx();

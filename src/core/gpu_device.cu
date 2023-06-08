@@ -2,11 +2,13 @@
 #include "device.h"
 #include "gpu_utils.cuh"
 #include "tensor.h"
+#include <stdio.h>
 namespace inferllm {
 
 void* GPUDevice::allocate(size_t len) {
     auto it = m_free_memory.lower_bound(len);
     void* ptr = nullptr;
+
     if (it != m_free_memory.end() && it->second.size() > 0) {
         ptr = it->second.back();
         it->second.pop_back();

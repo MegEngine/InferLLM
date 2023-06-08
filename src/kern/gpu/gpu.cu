@@ -1,11 +1,11 @@
 #include <assert.h>
+#include <stdio.h>
 #include "core/tensor.h"
 #include "gpu.h"
 #include "kern/kernel.h"
 #include "math.h"
 #include "string.h"
 #include "utils.h"
-
 namespace inferllm {
 namespace gpu {
 
@@ -182,7 +182,9 @@ void llm_embedding_get_float_float(
     for (uint32_t i = 0; i < len_seq; ++i) {
         const int row = index[i];
         const int weight_stride = embd;
-        memcpy(dst + i * embd, weights + row * weight_stride, embd * sizeof(float));
+        cudaMemcpy(
+                dst + i * embd, weights + row * weight_stride, embd * sizeof(float),
+                cudaMemcpyDeviceToDevice);
     }
 }
 
@@ -190,28 +192,27 @@ __global__ void llm_embedding_get_int4_float_gpu(
         uint32_t n, const void* weights, const uint32_t* index_ptr, float* dst,
         uint32_t len_seq, uint32_t embd) {
     CUDA_KERNEL_LOOP(index, n) {
-        uint32_t head_loc = index / embd;
-        uint32_t nb_loc = (index / QK40) % (embd / QK40);
-        uint32_t qk40_loc = index % QK40;
+        uint32_t seq_loc = index / (embd / 2);
+        uint32_t nb_loc = (index / (QK40 / 2)) % (embd / QK40);
+        uint32_t qk40_loc = index % (QK40 / 2);
 
-        const int row = index_ptr[head_loc];
+        const int row = index_ptr[seq_loc];
         const int weight_stride = embd * sizeof(BlockQ40) / QK40;
 
         auto x = (const char*)weights + row * weight_stride;
 
-        auto y = dst + head_loc * embd;
+        auto y = dst + seq_loc * embd;
 
         const size_t bs = sizeof(float) + QK40 / 2;
 
         const uint8_t* __restrict pd = ((const uint8_t*)x + 0 * bs);
         const uint8_t* __restrict pb = ((const uint8_t*)x + 0 * bs + sizeof(float));
-
         // scalar
         const float d = *(const float*)(pd + nb_loc * bs);
 
         const uint8_t* __restrict pp = pb + nb_loc * bs;
 
-        const uint8_t vi = pp[qk40_loc / 2];
+        const uint8_t vi = pp[qk40_loc];
 
         const int8_t vi0 = vi & 0xf;
         const int8_t vi1 = vi >> 4;
@@ -222,15 +223,17 @@ __global__ void llm_embedding_get_int4_float_gpu(
         // printf("d = %f, vi = %d, vi0 = %d, vi1 = %d, v0 = %f, v1 = %f\n",
         // d, vi, vi0, vi1, v0, v1);
 
-        y[nb_loc * QK40 + qk40_loc + 0] = v0;
-        y[nb_loc * QK40 + qk40_loc + 1] = v1;
+        y[nb_loc * QK40 + qk40_loc * 2 + 0] = v0;
+        y[nb_loc * QK40 + qk40_loc * 2 + 1] = v1;
+        // printf("%f\n%f\n", v0, v1);
     }
 }
 
 void llm_embedding_get_int4_float(
         const void* weights, const uint32_t* index, float* dst, uint32_t len_seq,
         uint32_t embd) {
-    uint32_t count = len_seq * embd;
+    uint32_t count = len_seq * (embd / 2);
+
     llm_embedding_get_int4_float_gpu<<<GET_BLOCKS(count), CUDA_NUM_THREADS>>>(
             count, weights, index, dst, len_seq, embd);
 }
@@ -259,7 +262,7 @@ struct AddFunctor {
 struct MulFunctor {
     __device__ float operator()(
             uint32_t i, const float* input1, const float* input2) const {
-        return input1[i] + input2[i];
+        return input1[i] * input2[i];
     }
 };
 
@@ -286,14 +289,12 @@ void llm_elemwise_compute_float(
             break;
         }
         case ElemMode::Gelu: {
-            {
-                const float* src0 = srcs[0];
-                LaunchKernel(GeluFunctor(), len, dst, src0);
-                break;
-            }
-            default:
-                INFER_ASSERT(0, "Not supported.");
+            const float* src0 = srcs[0];
+            LaunchKernel(GeluFunctor(), len, dst, src0);
+            break;
         }
+        default:
+            INFER_ASSERT(0, "Not supported.");
     }
 }
 
@@ -332,19 +333,20 @@ __global__ void llm_rope_compute_float_gpu(
     int n_dims = n_rot;
     CUDA_KERNEL_LOOP(index, n) {
         uint32_t half_rot = n_rot / 2;
-        uint32_t seq_loc = index / (head * half_rot);
-        uint32_t head_loc = (index / half_rot) % head;
+
         uint32_t rot_loc = index % half_rot;
+        uint32_t head_loc = (index / half_rot) % head;
+        uint32_t seq_loc = index / (head * half_rot);
 
         const int p = (mode == 0 ? n_past + seq_loc : seq_loc);
-        const double theta = pow(10000.0, ((double)-rot_loc) / n_dims);
+        const double theta = pow(10000.0, ((double)-rot_loc * 2) / n_dims);
 
         const double cos_theta = cos(p * theta);
         const double sin_theta = sin(p * theta);
 
         const float* const src =
-                src0 + seq_loc * head * embd + head_loc * embd + rot_loc;
-        float* dst_data = dst + seq_loc * head * embd + head_loc * embd + rot_loc;
+                src0 + seq_loc * head * embd + head_loc * embd + rot_loc * 2;
+        float* dst_data = dst + seq_loc * head * embd + head_loc * embd + rot_loc * 2;
 
         double x0 = src[0];
         double x1 = src[1];
@@ -393,7 +395,7 @@ __global__ void llm_matmul_compute_float_float_gpu(
 
         const float* y = src1 + m_loc * K;
 
-        for (int i = 0; i < n; i++) {
+        for (int i = 0; i < K; i++) {
             sumf += x[i] * y[i];
         }
         dst[index] = sumf + b;
@@ -414,7 +416,7 @@ __global__ void llm_matmul_compute_int4_float_step1_gpu(
         uint32_t m_loc = index / (K / QK80);
         uint32_t nb_loc = index % (K / QK80);
 
-        uint32_t weight_q80_stride = K * sizeof(BlockQ80) / sizeof(BlockQ80);
+        uint32_t weight_q80_stride = K * sizeof(BlockQ80) / QK80;
 
         const float* x = src1 + m_loc * K;
         BlockQ80* y = (BlockQ80*)(static_cast<uint8_t*>(workspace) +
@@ -445,8 +447,8 @@ __global__ void llm_matmul_compute_int4_float_step2_gpu(
         uint32_t m_loc = index / N;
         uint32_t n_loc = index % N;
 
-        uint32_t weight_q40_stride = K * sizeof(BlockQ40) / sizeof(BlockQ40);
-        uint32_t weight_q80_stride = K * sizeof(BlockQ80) / sizeof(BlockQ80);
+        uint32_t weight_q40_stride = K * sizeof(BlockQ40) / QK40;
+        uint32_t weight_q80_stride = K * sizeof(BlockQ80) / QK80;
 
         int8_t* q_src = static_cast<int8_t*>(workspace);
         const void* q_weight =
@@ -481,7 +483,7 @@ __global__ void llm_matmul_compute_int4_float_step2_gpu(
             sumf += d0 * d1 * sumi;
         }
 
-        dst[m_loc * N + n_loc] = sumf + b;
+        dst[index] = sumf + b;
     }
 }
 // compute the softmax of the last dim of src, and store the result in dst
@@ -566,7 +568,8 @@ void llm_permute_compute_float(
             for (int i1 = 0; i1 < dim1; i1++) {
                 const float* p_src = src0 + (i0 * dim1 + i1) * dim2;
                 float* p_dst = dst + (i1 * dim0 + i0) * dim2;
-                cudaMemcpy(p_dst, p_src, dim2 * sizeof(float),cudaMemcpyDeviceToDevice);
+                cudaMemcpy(
+                        p_dst, p_src, dim2 * sizeof(float), cudaMemcpyDeviceToDevice);
             }
         }
     }
@@ -586,7 +589,7 @@ __global__ void llm_matmul_compute_with_head_stride_float_gpu(
 
         auto p_srcq = srcq + head_loc * sub_embd + seq_loc * line_stride;
         auto p_srck = srck + head_loc * sub_embd + line_loc * line_stride;
-        float sum = 0;
+        float sum = 0.0;
 
         for (uint32_t k = 0; k < sub_embd; k++) {
             sum += p_srck[k] * p_srcq[k];
@@ -623,7 +626,7 @@ __global__ void llm_head_batched_matmul_compute_float_gpu(
     uint32_t sub_embd = embd / head;
     uint32_t length = nr_past + seqlen;
     CUDA_KERNEL_LOOP(index, n) {
-        uint32_t seq_loc = index / embd;
+        uint32_t seq_loc = (index / embd);
 
         uint32_t head_loc = (index / sub_embd) % head;
 

@@ -1,7 +1,8 @@
 #include "op.h"
 #include "kern/kernel.h"
 #include "kern/naive/naive.h"
-
+#include<iostream>
+#include<fstream>
 using namespace inferllm;
 
 void LayerNorm::execute(WorkSpace* workspace, uint32_t nr_past) {
@@ -58,6 +59,19 @@ void Embedding::execute(WorkSpace*, uint32_t) {
             kernel->operator()<KernelID::EmbeddingGetInt4Float>(
                     weight->ptr(), input->ptr<uint32_t>(), output->ptr<float>(), len,
                     m_embd);
+
+            // float* temp = new float[len * m_embd];
+            
+            // std::ofstream fout("file1.txt");
+            // cudaMemcpy(temp,output->ptr<float>(),sizeof(float)*len*m_embd, cudaMemcpyDeviceToHost);
+
+
+            // for (int i = 0; i < len * m_embd; i++) {
+            //     fout << temp[i] << std::endl;
+            // }
+
+            // delete[] temp;
+            // exit(0);
         } else if (weight_type == DType::Float32) {
             kernel->operator()<KernelID::EmbeddingGetFloatFloat>(
                     weight->ptr<float>(), input->ptr<uint32_t>(), output->ptr<float>(),
@@ -153,7 +167,7 @@ size_t MatMul::get_workspace_in_byte() {
     auto src_dtype = inputs()[0]->dtype();
     auto kernel = get_kernel();
     if (src_dtype == DType::Float32) {
-        return kernel->get_workspace<KernelID::MatmulInt4Float>( M, N, K);
+        return kernel->get_workspace<KernelID::MatmulInt4Float>(M, N, K);
     }
     return 0;
 }
@@ -200,7 +214,7 @@ size_t MatMulLast::get_workspace_in_byte() {
     auto src_dtype = inputs()[0]->dtype();
     auto kernel = get_kernel();
     if (src_dtype == DType::Float32) {
-        return kernel->get_workspace<KernelID::MatmulInt4Float>( M, N, K);
+        return kernel->get_workspace<KernelID::MatmulInt4Float>(M, N, K);
     }
     return 0;
 }
@@ -243,7 +257,8 @@ void LlamaAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
     }
 
     void* p_work = workspace->ptr();
-    uint32_t matmul_size = kernel->get_workspace<KernelID::MatmulInt4Float>( seqlen, embd, embd);
+    uint32_t matmul_size =
+            kernel->get_workspace<KernelID::MatmulInt4Float>(seqlen, embd, embd);
     uint32_t size = workspace->length();
 
     void* q_out = static_cast<void*>(static_cast<char*>(p_work) + matmul_size);
@@ -306,7 +321,7 @@ size_t LlamaAttention::get_workspace_in_byte() {
     size_t total = 0;
     if (src_dtype == DType::Float32) {
         //! matmul tmp
-        total += kernel->get_workspace<KernelID::MatmulInt4Float>( M, N, K);
+        total += kernel->get_workspace<KernelID::MatmulInt4Float>(M, N, K);
         //! out q
         total += seqlen * m_embd * sizeof(float);
         //! kq out
@@ -362,11 +377,11 @@ void GlmAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
     void* p_work = workspace->ptr();
     size_t matmul_size = 0;
     if (weight_type == DType::Int4) {
-        matmul_size = kernel->get_workspace<KernelID::MatmulInt4Float>(
-                seqlen, embd, embd);
+        matmul_size =
+                kernel->get_workspace<KernelID::MatmulInt4Float>(seqlen, embd, embd);
     } else if (weight_type == DType::Float32) {
-        matmul_size = kernel->get_workspace<KernelID::MatmulFloatFloat>(
-                seqlen, embd, embd);
+        matmul_size =
+                kernel->get_workspace<KernelID::MatmulFloatFloat>(seqlen, embd, embd);
     }
     uint32_t size = workspace->length();
 
@@ -448,8 +463,7 @@ size_t GlmAttention::get_workspace_in_byte() {
     size_t total = 0;
     if (src_dtype == DType::Float32 && w_dtype == DType::Int4) {
         //! matmul tmp
-        total += kernel->get_workspace<KernelID::MatmulInt4Float>(
-                M, N, K);
+        total += kernel->get_workspace<KernelID::MatmulInt4Float>(M, N, K);
         //! out q
         total += seqlen * m_embd * sizeof(float);
         //! kv out
@@ -457,8 +471,7 @@ size_t GlmAttention::get_workspace_in_byte() {
     }
     if (src_dtype == DType::Float32 && w_dtype == DType::Float32) {
         //! matmul tmp
-        total += kernel->get_workspace<KernelID::MatmulFloatFloat>(
-                M, N, K);
+        total += kernel->get_workspace<KernelID::MatmulFloatFloat>(M, N, K);
         //! out q
         total += seqlen * m_embd * sizeof(float);
         //! kv out

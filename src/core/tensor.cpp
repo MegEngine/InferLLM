@@ -69,6 +69,7 @@ TensorState Tensor::prepare_data() {
                     cudaMemcpy(
                             (float*)m_data, (float*)temp_ptr, length,
                             cudaMemcpyHostToDevice);
+                    delete[] temp_ptr;
                 } else {
                     m_data = m_device->allocate(length);
                     m_file->read_data(m_data, length, m_file_offset);
@@ -98,8 +99,8 @@ void Tensor::set_shared_memory(void* data, size_t size) {
     INFER_ASSERT(
             data == nullptr || size >= length_in_byte(),
             "the memory set to tensor is not enough");
-    m_state = TensorState::Own;
     m_data = data;
+    m_state = TensorState::Own;
     m_shared = true;
 }
 
