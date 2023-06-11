@@ -1,5 +1,7 @@
 #include <assert.h>
 #include <stdio.h>
+#include <fstream>
+#include <iostream>
 #include "core/tensor.h"
 #include "gpu.h"
 #include "kern/kernel.h"
@@ -74,6 +76,15 @@ void llm_elemwise_broadcast_dim0_src1_compute_float(
         const float* src0, const float* src1, float* dst, uint32_t len0, uint32_t len1,
         ElemMode mode) {
     uint32_t count = len0 * len1;
+    // float* input = new float[count];
+
+    // cudaMemcpy(input, src0, count * sizeof(float), cudaMemcpyDeviceToHost);
+
+    // for (int i = 0; i < count; i++) {
+    //     printf("input %f\n", input[i]);
+    // }
+
+    // delete[] input;
     switch (mode) {
         case ElemMode::Add: {
             llm_elemwise_broadcast_dim0_src1_compute_float_add_gpu<<<
@@ -173,6 +184,15 @@ __global__ void llm_norm_compute_float_gpu(
 
 void llm_norm_compute_float(
         const float* src, float* dst, uint32_t seq_len, uint32_t embd) {
+    // float* input = new float[seq_len * embd];
+    // cudaMemcpy(input, src, seq_len * embd * sizeof(float), cudaMemcpyDeviceToHost);
+
+    // for (int i = 0; i < seq_len * embd; i++) {
+    //     printf("dfadf  %f\n", input[i]);
+
+    //     printf("%d %d\n",seq_len*embd,i);
+    // }
+
     llm_norm_compute_float_gpu<<<GET_BLOCKS(seq_len), CUDA_NUM_THREADS>>>(
             seq_len, src, dst, seq_len, embd);
 }
@@ -188,54 +208,65 @@ void llm_embedding_get_float_float(
     }
 }
 
+__device__ void dequantize_row_q4_0_reference_gpu(
+        const void* __restrict x, float* __restrict y, int k) {
+    const int nb = k / QK40;
+    const size_t bs = sizeof(float) + QK40 / 2;
+
+    const uint8_t* __restrict pd = ((const uint8_t*)x + 0 * bs);
+    const uint8_t* __restrict pb = ((const uint8_t*)x + 0 * bs + sizeof(float));
+
+    // scalar
+    for (int i = 0; i < nb; i++) {
+        const float d = *(const float*)(pd + i * bs);
+
+        const uint8_t* __restrict pp = pb + i * bs;
+
+        for (int l = 0; l < QK40; l += 2) {
+            const uint8_t vi = pp[l / 2];
+
+            const int8_t vi0 = vi & 0xf;
+            const int8_t vi1 = vi >> 4;
+
+            const float v0 = (vi0 - 8) * d;
+            const float v1 = (vi1 - 8) * d;
+
+            printf("d = %f, vi = %d, vi0 = %d, vi1 = %d, v0 = %f, v1 = %f\n",
+            d, vi, vi0, vi1, v0, v1);
+
+            y[i * QK40 + l + 0] = v0;
+            y[i * QK40 + l + 1] = v1;
+        }
+    }
+}
+
 __global__ void llm_embedding_get_int4_float_gpu(
-        uint32_t n, const void* weights, const uint32_t* index_ptr, float* dst,
-        uint32_t len_seq, uint32_t embd) {
-    CUDA_KERNEL_LOOP(index, n) {
-        uint32_t seq_loc = index / (embd / 2);
-        uint32_t nb_loc = (index / (QK40 / 2)) % (embd / QK40);
-        uint32_t qk40_loc = index % (QK40 / 2);
-
-        const int row = index_ptr[seq_loc];
-        const int weight_stride = embd * sizeof(BlockQ40) / QK40;
-
-        auto x = (const char*)weights + row * weight_stride;
-
-        auto y = dst + seq_loc * embd;
-
-        const size_t bs = sizeof(float) + QK40 / 2;
-
-        const uint8_t* __restrict pd = ((const uint8_t*)x + 0 * bs);
-        const uint8_t* __restrict pb = ((const uint8_t*)x + 0 * bs + sizeof(float));
-        // scalar
-        const float d = *(const float*)(pd + nb_loc * bs);
-
-        const uint8_t* __restrict pp = pb + nb_loc * bs;
-
-        const uint8_t vi = pp[qk40_loc];
-
-        const int8_t vi0 = vi & 0xf;
-        const int8_t vi1 = vi >> 4;
-
-        const float v0 = (vi0 - 8) * d;
-        const float v1 = (vi1 - 8) * d;
-
-        // printf("d = %f, vi = %d, vi0 = %d, vi1 = %d, v0 = %f, v1 = %f\n",
-        // d, vi, vi0, vi1, v0, v1);
-
-        y[nb_loc * QK40 + qk40_loc * 2 + 0] = v0;
-        y[nb_loc * QK40 + qk40_loc * 2 + 1] = v1;
-        // printf("%f\n%f\n", v0, v1);
+        uint32_t n, const void* weights, const uint32_t* index, float* dst,
+        uint32_t len_seq, uint32_t embd, const int weight_stride) {
+    CUDA_KERNEL_LOOP(i, n) {
+        const int row = index[i];
+        dequantize_row_q4_0_reference_gpu(
+                (static_cast<const char*>(weights) + row * weight_stride),
+                dst + i * embd, embd);
     }
 }
 
 void llm_embedding_get_int4_float(
         const void* weights, const uint32_t* index, float* dst, uint32_t len_seq,
         uint32_t embd) {
-    uint32_t count = len_seq * (embd / 2);
+    const int weight_stride = embd * sizeof(BlockQ40) / QK40;
 
-    llm_embedding_get_int4_float_gpu<<<GET_BLOCKS(count), CUDA_NUM_THREADS>>>(
-            count, weights, index, dst, len_seq, embd);
+    llm_embedding_get_int4_float_gpu<<<GET_BLOCKS(len_seq), CUDA_NUM_THREADS>>>(
+            len_seq, weights, index, dst, len_seq, embd, weight_stride);
+
+    // float* output = new float[len_seq*embd];
+    // cudaMemcpy(
+    //         output, dst, len_seq * embd * sizeof(float), cudaMemcpyDeviceToHost);
+
+    // // for (int i = 0; i < len_seq * embd; i++) {
+    // //     std::cout<<output[i]<<std::endl;
+    // // }
+    // delete[] output;
 }
 
 struct SiluFunctor {
@@ -316,14 +347,30 @@ __global__ void llm_rms_norm_compute_float_gpu(
 
         for (uint32_t j = 0; j < embd; j++) {
             out[j] = row[j] * scale;
+            // printf("%f\n", output[i]);
         }
     }
 }
 
 void llm_rms_norm_compute_float(
         const float* src, float* dst, uint32_t seq_len, uint32_t embd) {
+    float* input = new float[seq_len * embd];
+    cudaMemcpy(input, src, seq_len * embd * sizeof(float), cudaMemcpyDeviceToHost);
+
+    // for (int i = 0; i < seq_len * embd; i++) {
+    //     printf("dfadf  %f\n", input[i]);
+    // }
+    delete[] input;
     llm_rms_norm_compute_float_gpu<<<GET_BLOCKS(seq_len), CUDA_NUM_THREADS>>>(
             src, dst, seq_len, embd);
+
+    float* output = new float[seq_len * embd];
+    cudaMemcpy(output, dst, seq_len * embd * sizeof(float), cudaMemcpyDeviceToHost);
+
+    for (int i = 0; i < seq_len * embd; i++) {
+        // printf("%f\n", output[i]);
+    }
+    delete[] output;
 }
 
 __global__ void llm_rope_compute_float_gpu(
@@ -362,13 +409,47 @@ __global__ void llm_rope_compute_float_gpu(
         }
     }
 }
+
+void llm_rope_compute_float_cpu(
+        float* dst, const float* src0, uint32_t n_past, uint32_t n_rot, RotMode m,
+        uint32_t seqlen, uint32_t head, uint32_t embd) {
+    int ne2 = seqlen;
+    // int ne1 = head;
+    // int ne0 = embd;
+    int mode = static_cast<int>(m);
+    int n_dims = n_rot;
+
+    for (int i1 = 0; i1 < head; i1++) {
+        for (int i2 = (mode == 0 ? 0 : n_past); i2 < ne2; i2++) {
+            const int p = (mode == 0 ? n_past + i2 : i2);
+            for (int i0 = 0; i0 < n_dims; i0 += 2) {
+                const double theta = pow(10000.0, ((double)-i0) / n_dims);
+
+                const double cos_theta = cos(p * theta);
+                const double sin_theta = sin(p * theta);
+
+                const float* const src = src0 + i2 * head * embd + i1 * embd + i0;
+                float* dst_data = dst + i2 * head * embd + i1 * embd + i0;
+
+                double x0 = src[0];
+                double x1 = src[1];
+
+                dst_data[0] = x0 * cos_theta - x1 * sin_theta;
+                dst_data[1] = x0 * sin_theta + x1 * cos_theta;
+            }
+        }
+    }
+}
 void llm_rope_compute_float(
         float* dst, const float* src0, uint32_t n_past, uint32_t n_rot, RotMode m,
         uint32_t seqlen, uint32_t head, uint32_t embd) {
     uint32_t count = seqlen * head * (n_rot / 2);
 
+
     llm_rope_compute_float_gpu<<<GET_BLOCKS(count), CUDA_NUM_THREADS>>>(
             count, dst, src0, n_past, n_rot, m, seqlen, head, embd);
+
+
 }
 
 __global__ void llm_elemwise_compute_float_scale_gpu(
@@ -419,13 +500,16 @@ __global__ void llm_matmul_compute_int4_float_step1_gpu(
         uint32_t weight_q80_stride = K * sizeof(BlockQ80) / QK80;
 
         const float* x = src1 + m_loc * K;
+
         BlockQ80* y = (BlockQ80*)(static_cast<uint8_t*>(workspace) +
                                   m_loc * weight_q80_stride);
 
         float amax = 0.0f;  // absolute max
         for (int l = 0; l < QK80; l++) {
             const float v = x[nb_loc * QK80 + l];
-            amax = amax > fabsf(v) ? amax : fabsf(v);
+            // printf("ffgdfg323424234dfg %f\n", v);
+
+            amax = (amax > fabsf(v) ? amax : fabsf(v));
         }
 
         const float d = amax / ((1 << 7) - 1);
@@ -434,7 +518,6 @@ __global__ void llm_matmul_compute_int4_float_step1_gpu(
         y[nb_loc].d = d;
         for (int l = 0; l < QK80; ++l) {
             const float v0 = x[nb_loc * QK80 + l] * id;
-
             y[nb_loc].qs[l] = roundf(v0);
         }
     }
@@ -451,8 +534,10 @@ __global__ void llm_matmul_compute_int4_float_step2_gpu(
         uint32_t weight_q80_stride = K * sizeof(BlockQ80) / QK80;
 
         int8_t* q_src = static_cast<int8_t*>(workspace);
+
         const void* q_weight =
                 static_cast<const uint8_t*>(src0) + n_loc * weight_q40_stride;
+
         float b = bias ? bias[n_loc] : 0.0f;
         int8_t* src = q_src + m_loc * weight_q80_stride;
 
@@ -486,13 +571,25 @@ __global__ void llm_matmul_compute_int4_float_step2_gpu(
         dst[index] = sumf + b;
     }
 }
+
 // compute the softmax of the last dim of src, and store the result in dst
+int temp = 0;
 void llm_matmul_compute_int4_float(
         float* dst, const void* src0, const float* bias, const float* src1, uint32_t M,
         uint32_t N, uint32_t K, void* workspace, uint32_t size) {
-    //! src0 is quantized weights, weights store in 32 data as block and a
-    //! block share the same scale, src1 is featureMap. src0 layout is {N,
-    //! K}, src1 layout is {M, K}, the dst is {M, N}
+    auto temp_count = M * K;
+    temp++;
+    float* input = new float[temp_count];
+
+    cudaMemcpy(input, src1, temp_count * sizeof(float), cudaMemcpyDeviceToHost);
+    // std::ofstream outputFile("data.txt");
+    // for (int i = 0; i < temp_count; i++) {
+    //     // printf("%d input value %f\n", temp, input[i]);
+    //     outputFile << input[i] << "\n";
+    // }
+    // outputFile.close();
+    delete[] input;
+
     INFER_ASSERT(sizeof(float) * K <= size, "workspace is not enough.");
     uint32_t weight_q40_stride =
             K * dtype_in_byte(DType::Int4) / dtype_block_size(DType::Int4);
@@ -503,12 +600,30 @@ void llm_matmul_compute_int4_float(
     //! will reduce the memory traffic
     uint32_t count1 = M * (K / QK80);
 
+    float* cpu_src1 = new float[count1];
+
     llm_matmul_compute_int4_float_step1_gpu<<<GET_BLOCKS(count1), CUDA_NUM_THREADS>>>(
             count1, dst, src0, bias, src1, M, N, K, workspace, size);
+
+    cudaMemcpy(cpu_src1, dst, count1 * sizeof(float), cudaMemcpyDeviceToHost);
+
+    for (uint32_t i = 0; i < count1; i++) {
+        // printf("%f\n", cpu_src1[i]);
+    }
+    delete[] cpu_src1;
 
     uint32_t count2 = M * N;
     llm_matmul_compute_int4_float_step2_gpu<<<GET_BLOCKS(count2), CUDA_NUM_THREADS>>>(
             count2, dst, src0, bias, src1, M, N, K, workspace, size);
+
+    float* cpu_src = new float[count2];
+
+    cudaMemcpy(cpu_src, dst, count2 * sizeof(float), cudaMemcpyDeviceToHost);
+
+    // for (uint32_t i = 0; i < count2; i++) {
+    //     printf("3333 %f\n", cpu_src[i]);
+    // }
+    delete[] cpu_src;
 }
 
 __global__ void llm_scale_diag_mask_inf_float_gpu(
@@ -530,12 +645,57 @@ __global__ void llm_scale_diag_mask_inf_float_gpu(
  *
  *
  */
+
+void llm_scale_diag_mask_inf_float_cpu(
+        float* dst, const float* src0, float scale, uint32_t n_past, uint32_t seqlen,
+        uint32_t head) {
+    const int nc = n_past + seqlen;
+    const int nr = seqlen;
+    const int nz = head;
+
+    for (int k = 0; k < head; k++) {
+        for (int j = 0; j < seqlen; j++) {
+            for (uint32_t i = 0; i < nc; i++) {
+                uint32_t index = k * nc * nr + j * nc + i;
+                if (i > n_past + j) {
+                    dst[index] = -INFINITY;
+                } else {
+                    dst[index] = src0[index] * scale;
+                }
+            }
+        }
+    }
+}
+
 void llm_scale_diag_mask_inf_float(
         float* dst, const float* src0, float scale, uint32_t n_past, uint32_t seqlen,
         uint32_t head) {
     uint32_t count = head * seqlen * (n_past + seqlen);
+
+    float* src_cpu = new float[count];
+    float* dst_cpu = new float[count];
+
+    cudaMemcpy(src_cpu, src0, count * sizeof(float), cudaMemcpyDeviceToHost);
+
+    llm_scale_diag_mask_inf_float_cpu(dst_cpu, src_cpu, scale, n_past, seqlen, head);
+
     llm_scale_diag_mask_inf_float_gpu<<<GET_BLOCKS(count), CUDA_NUM_THREADS>>>(
             count, dst, src0, scale, n_past, seqlen, head);
+
+    float* gpu_dst = new float[count];
+
+    cudaMemcpy(gpu_dst, dst, count * sizeof(float), cudaMemcpyDeviceToHost);
+
+    // for (int i = 0; i < count; i++) {
+    //     if (dst_cpu[i] != gpu_dst[i]) {
+    //         // printf("error\n");
+    //         printf("%f %f\n", dst_cpu[i], gpu_dst[i]);
+    //     }
+    // }
+
+    delete[] src_cpu;
+    delete[] dst_cpu;
+    delete[] gpu_dst;
 }
 
 __global__ void llm_diag_mask_inf_float_gpu(
@@ -553,8 +713,32 @@ __global__ void llm_diag_mask_inf_float_gpu(
 void llm_diag_mask_inf_float(
         float* dst, const float* src0, uint32_t n_past, uint32_t N, uint32_t head) {
     uint32_t count = head * N * (N + n_past);
+
+    float* src_cpu = new float[count];
+    float* dst_cpu = new float[count];
+
+    cudaMemcpy(src_cpu, src0, count * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(dst_cpu, dst, count * sizeof(float), cudaMemcpyDeviceToHost);
+
+    llm_scale_diag_mask_inf_float_cpu(dst_cpu, src_cpu, 1.0, n_past, N, head);
+
     llm_diag_mask_inf_float_gpu<<<GET_BLOCKS(count), CUDA_NUM_THREADS>>>(
             count, dst, src0, n_past, N, head);
+
+    float* gpu_dst = new float[count];
+
+    cudaMemcpy(gpu_dst, dst, count * sizeof(float), cudaMemcpyDeviceToHost);
+
+    // for (int i = 0; i < count; i++) {
+    //     printf("fuck\n");
+    //     if (dst_cpu[i] != gpu_dst[i]) {
+    //         printf("error\n");
+    //     }
+    // }
+
+    delete[] src_cpu;
+    delete[] dst_cpu;
+    delete[] gpu_dst;
 }
 void llm_permute_compute_float(
         float* dst, const float* src0, uint32_t dim0, uint32_t dim1, uint32_t dim2,
@@ -656,63 +840,63 @@ void llm_glm_gmask_inf_float(
     //! set every head the last number of data to -inf of every row expect
     //! the
     //! last row
-    const int nc = n_past + seqlen;
-    auto task = [=](const TaskId& id) {
-        for (int k = id.start; k < id.end; k++) {
-            for (int j = 0; j < seqlen - 1; j++) {
-                dst[k * nc * seqlen + j * nc + nc - 1] = -INFINITY;
-            }
-        }
-    };
+    // const int nc = n_past + seqlen;
+    // auto task = [=](const TaskId& id) {
+    //     for (int k = id.start; k < id.end; k++) {
+    //         for (int j = 0; j < seqlen - 1; j++) {
+    //             dst[k * nc * seqlen + j * nc + nc - 1] = -INFINITY;
+    //         }
+    //     }
+    // };
 }
 void llm_glm_rope_compute_float(
         float* dst, const float* src0, uint32_t n_past, uint32_t gmask_positon,
         uint32_t seqlen, uint32_t head, uint32_t embd) {
-    bool prefill = false;
-    if (n_past == 0) {
-        prefill = true;
-    }
-    int quart_embd = embd / 4;
-    int half_embd = embd / 2;
-    auto task = [=](const TaskId& id) {
-        for (int h = id.start; h < id.end; h++) {
-            for (int seq = 0; seq < seqlen; seq++) {
-                int position_id = std::min(seq + n_past, gmask_positon);
-                int block_position_id =
-                        std::max((int)(n_past + seq) - (int)gmask_positon, 0);
-                for (int p = 0; p < quart_embd; p++) {
-                    const double theta = pow(10000.0, ((double)-2 * p) / (half_embd));
-                    const double cos_theta = cos(position_id * theta);
-                    const double sin_theta = sin(position_id * theta);
+    // bool prefill = false;
+    // if (n_past == 0) {
+    //     prefill = true;
+    // }
+    // int quart_embd = embd / 4;
+    // int half_embd = embd / 2;
+    // auto task = [=](const TaskId& id) {
+    //     for (int h = id.start; h < id.end; h++) {
+    //         for (int seq = 0; seq < seqlen; seq++) {
+    //             int position_id = std::min(seq + n_past, gmask_positon);
+    //             int block_position_id =
+    //                     std::max((int)(n_past + seq) - (int)gmask_positon, 0);
+    //             for (int p = 0; p < quart_embd; p++) {
+    //                 const double theta = pow(10000.0, ((double)-2 * p) /
+    //                 (half_embd)); const double cos_theta = cos(position_id * theta);
+    //                 const double sin_theta = sin(position_id * theta);
 
-                    const double cos_theta_b = cos(block_position_id * theta);
-                    const double sin_theta_b = sin(block_position_id * theta);
+    //                 const double cos_theta_b = cos(block_position_id * theta);
+    //                 const double sin_theta_b = sin(block_position_id * theta);
 
-                    //! first half
-                    {
-                        const float* const src =
-                                src0 + seq * head * embd + h * embd + p;
-                        float* dst_data = dst + seq * head * embd + h * embd + p;
-                        double x0 = src[0];
-                        double x32 = src[quart_embd];
-                        dst_data[0] = x0 * cos_theta - x32 * sin_theta;
-                        dst_data[quart_embd] = x32 * cos_theta + x0 * sin_theta;
-                    }
-                    //! second half
-                    {
-                        const float* const src =
-                                src0 + seq * head * embd + h * embd + half_embd + p;
-                        float* dst_data =
-                                dst + seq * head * embd + h * embd + half_embd + p;
-                        double x0 = src[0];
-                        double x32 = src[quart_embd];
-                        dst_data[0] = x0 * cos_theta_b - x32 * sin_theta_b;
-                        dst_data[quart_embd] = x32 * cos_theta_b + x0 * sin_theta_b;
-                    }
-                }
-            }
-        }
-    };
+    //                 //! first half
+    //                 {
+    //                     const float* const src =
+    //                             src0 + seq * head * embd + h * embd + p;
+    //                     float* dst_data = dst + seq * head * embd + h * embd + p;
+    //                     double x0 = src[0];
+    //                     double x32 = src[quart_embd];
+    //                     dst_data[0] = x0 * cos_theta - x32 * sin_theta;
+    //                     dst_data[quart_embd] = x32 * cos_theta + x0 * sin_theta;
+    //                 }
+    //                 //! second half
+    //                 {
+    //                     const float* const src =
+    //                             src0 + seq * head * embd + h * embd + half_embd + p;
+    //                     float* dst_data =
+    //                             dst + seq * head * embd + h * embd + half_embd + p;
+    //                     double x0 = src[0];
+    //                     double x32 = src[quart_embd];
+    //                     dst_data[0] = x0 * cos_theta_b - x32 * sin_theta_b;
+    //                     dst_data[quart_embd] = x32 * cos_theta_b + x0 * sin_theta_b;
+    //                 }
+    //             }
+    //         }
+    //     }
+    // };
 }
 }  // namespace gpu
 }  // namespace inferllm

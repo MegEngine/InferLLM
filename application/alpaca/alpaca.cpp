@@ -24,7 +24,7 @@ struct app_params {
     float temp = 0.10f;
     float repeat_penalty = 1.30f;
 
-    std::string model = "ggml-alpaca-7b-q4.bin";  // model path
+    std::string model = "/home/supercb/mycode/mlsys/InferLLM/chinese-alpaca-7b-q4.bin";  // model path
 
     bool use_color = true;  // use color to distinguish generations and inputs
     bool use_mmap = false;  // use mmap to load model

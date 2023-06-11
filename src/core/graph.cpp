@@ -185,15 +185,15 @@ void Graph::execute(
         for (size_t i = 0; i < m_modules.size(); i++) {
             m_modules[i]->execute(m_workspace.get(), nr_past, prefill);
         }
-        float* temp = new float[logist.size()];
-        cudaMemcpy(
-                temp, gpu_output, logist.size() * sizeof(float),
-                cudaMemcpyDeviceToHost);
+        // float* temp = new float[logist.size()];
+        // cudaMemcpy(
+        //         temp, gpu_output, logist.size() * sizeof(float),
+        //         cudaMemcpyDeviceToHost);
 
-        for (int i = 0; i < logist.size(); i++) {
-            std::cout << "logist: " << temp[i] << std::endl;
-        }
-        delete[] temp;
+        // // for (int i = 0; i < logist.size(); i++) {
+        // //     std::cout << "logist: " << temp[i] << std::endl;
+        // // }
+        // delete[] temp;
 
     } else {
         m_input->set_shared_memory(in_token.data(), in_token.size() * sizeof(int32_t));
