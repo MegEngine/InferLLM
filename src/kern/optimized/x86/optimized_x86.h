@@ -71,7 +71,12 @@ inline float vec_vec_dot_q4_0(const int n, const void* __restrict x,
         // Convert int32_t to float
         __m256 p = _mm256_cvtepi32_ps(i32);
         // Apply the scale, and accumulate
+
+#if defined(__FMA__)
         acc = _mm256_fmadd_ps(scale, p, acc);
+#else
+        acc = _mm256_add_ps(_mm256_mul_ps(scale, p), acc);
+#endif
     }
 
     // Return horizontal sum of the acc vector
@@ -158,7 +163,12 @@ inline float vec_vec_dot_q40_with_q80(const int n, const void* __restrict vx,
         const __m256 q = mul_sum_i8_pairs_float(bx, by);
 
         /* Multiply q with scale and accumulate */
-        acc = _mm256_fmadd_ps( d, q, acc );
+
+#if defined(__FMA__)
+        acc = _mm256_fmadd_ps(d, q, acc);
+#else
+        acc = _mm256_add_ps(_mm256_mul_ps(d, p), acc);
+#endif
     }
 
     return hsum_float_8(acc);
