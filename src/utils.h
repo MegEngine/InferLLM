@@ -2,14 +2,15 @@
 
 #pragma once
 
+#include <chrono>
 #include <fstream>
 #include <list>
 #include <map>
+#include <memory>
 #include <random>
 #include <string>
 #include <thread>
 #include <vector>
-#include <memory>
 #include "file.h"
 
 namespace inferllm {
@@ -72,6 +73,23 @@ public:
 
     std::map<Token, Id> token_to_id;
     std::vector<TokenScore> id_to_token;
+};
+
+class Timer {
+    using Time = std::chrono::high_resolution_clock;
+    using ms = std::chrono::milliseconds;
+    using fsec = std::chrono::duration<float>;
+
+public:
+    Timer() { start = Time::now(); }
+    double get_time() {
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<fsec>(end - start);
+        return duration.count();
+    };
+
+private:
+    std::chrono::time_point<std::chrono::high_resolution_clock> start;
 };
 
 // sample next token given probabilities for each embedding

@@ -7,6 +7,13 @@
 #include <string>
 #include <thread>
 #include <vector>
+#if defined (__unix__) || (defined (__APPLE__) && defined (__MACH__))
+#include <signal.h>
+#include <unistd.h>
+#elif defined (_WIN32)
+#include <windows.h>
+#include <signal.h>
+#endif
 
 #include "model.h"
 
@@ -92,6 +99,17 @@ bool app_params_parse(int argc, char** argv, app_params& params) {
     return true;
 }
 
+std::string running_summary;
+#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__)) || defined(_WIN32)
+void sigint_handler(int signo) {
+    if (signo == SIGINT) {
+        printf("\n");
+        printf("%s", running_summary.c_str());
+        _exit(130);
+    }
+};
+#endif
+
 int main(int argc, char** argv) {
     app_params params;
 
@@ -118,7 +136,7 @@ int main(int argc, char** argv) {
             std::make_shared<inferllm::Model>(config, params.mtype);
     model->load(params.model);
     model->init(params.top_k, params.top_p, params.temp, params.repeat_penalty,
-                params.repeat_last_n, params.seed);
+                params.repeat_last_n, params.seed, 2);
 
     std::string instruct_inp =
             " Below is an instruction that describes a task. Write a response "
@@ -147,6 +165,20 @@ int main(int argc, char** argv) {
 #endif
             " - If you want to submit another line, end your input in "
             "'\\'.\n");
+
+#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
+    struct sigaction sigint_action;
+    sigint_action.sa_handler = sigint_handler;
+    sigemptyset(&sigint_action.sa_mask);
+    sigint_action.sa_flags = 0;
+    sigaction(SIGINT, &sigint_action, NULL);
+#elif defined(_WIN32)
+    auto console_ctrl_handler = +[](DWORD ctrl_type) -> BOOL {
+        return (ctrl_type == CTRL_C_EVENT) ? (sigint_handler(SIGINT), true) : false;
+    };
+    SetConsoleCtrlHandler(static_cast<PHANDLER_ROUTINE>(console_ctrl_handler), true);
+#endif
+
     // prefill the model with the prompt
     model->prefill(instruct_inp);
 
@@ -172,6 +204,7 @@ int main(int argc, char** argv) {
             if (output.empty() || output.back() == 0 || token == 2) {
                 printf("\n");
                 printf("[end of text]");
+                running_summary = model->decode_summary();
                 is_interacting = true;
             }
             output.clear();
@@ -208,9 +241,5 @@ int main(int argc, char** argv) {
             user_input += response_inp;
         }
     }
-
-#if defined(_WIN32)
-    signal(SIGINT, SIG_DFL);
-#endif
     return 0;
 }

@@ -32,7 +32,7 @@ public:
 
     //! allocate memory for the model or init its param
     void init(uint32_t top_k, float top_p, float temp, float repeat_penalty,
-              int repeat_last_n, int32_t seed);
+              int repeat_last_n, int32_t seed, int32_t end_token);
 
     //! get the remain token number
     uint32_t get_remain_token();
@@ -48,6 +48,8 @@ public:
 
     //! decode the answer one by one
     std::string decode_iter(int& token);
+
+    std::string decode_summary() const;
 
 private:
     std::shared_ptr<ModelImp> m_model_imp;

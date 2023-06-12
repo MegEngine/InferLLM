@@ -36,6 +36,8 @@ public:
 
     Kernel* kernel() { return m_kernel.get(); }
 
+    void deactive() { m_thread_pool->deactive(); }
+
 private:
     std::unique_ptr<Kernel> m_kernel;
     std::unique_ptr<ThreadPool> m_thread_pool;

@@ -57,12 +57,13 @@ public:
 
     //! allocate memory for the model or init its param
     void init(uint32_t top_k, float top_p, float temp, float repeat_penalty,
-              int repeat_last_n, int32_t seed) {
+              int repeat_last_n, int32_t seed, int32_t end_token) {
         m_top_k = top_k;
         m_top_p = top_p;
         m_temp = temp;
         m_repeat_penalty = repeat_penalty;
         m_repeat_last_n = repeat_last_n;
+        m_end_token = end_token;
         for (uint32_t i = 0; i < m_repeat_last_n; i++) {
             m_last_queue.push_back(0);
         }
@@ -86,6 +87,8 @@ public:
 
     int32_t sample_and_update();
 
+    std::string decode_summary() const;
+
 private:
     std::vector<Vocab::Id> tokenize(const std::string& text, bool bos);
 
@@ -96,6 +99,7 @@ private:
     float m_temp;
     float m_repeat_penalty;
     uint32_t m_repeat_last_n;
+    int32_t m_end_token;
 
     int32_t m_pre_token;
 
@@ -110,6 +114,8 @@ private:
     std::vector<float> m_logist;
 
     std::mt19937 m_rng;
+    Timer m_timer;
+    double m_time_cost = 0;
 };
 
 }  // namespace inferllm

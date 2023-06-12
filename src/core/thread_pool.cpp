@@ -69,6 +69,7 @@ void ThreadPool::add_task(const MultiThreadingTask& task, uint32_t nr_task) {
         m_task({start, nr_task, m_nr_threads - 1});
         //! make sure all threads done
         sync();
+        deactive();
         //printf("all threads finished\n");
     }
 }

@@ -22,11 +22,14 @@ void ModelImp::load(const std::string& model_path){
 void ModelImp::prefill(const std::string& promote) {
     auto tokens = tokenize(promote, true);
     m_graph->post_tokenize(tokens);
-    for(auto token : tokens) {
+    for (auto token : tokens) {
         m_last_queue.push_back(token);
         m_last_queue.pop_front();
     }
+    auto start = m_timer.get_time();
     m_graph->execute(tokens, m_logist, m_past, true);
+    auto end = m_timer.get_time();
+    m_time_cost += end - start;
     m_past = tokens.size();
 }
 
@@ -38,7 +41,10 @@ std::string ModelImp::decode(const std::string& user_input, int& token) {
         m_last_queue.push_back(token);
         m_last_queue.pop_front();
     }
+    auto start = m_timer.get_time();
     m_graph->execute(tokens, m_logist, m_past, false);
+    auto end = m_timer.get_time();
+    m_time_cost += end - start;
     sample_and_update();
     m_past += tokens.size();
     token = m_pre_token;
@@ -47,7 +53,10 @@ std::string ModelImp::decode(const std::string& user_input, int& token) {
 
 //! decode the user input sentence
 std::string ModelImp::decode_iter(int& token) {
+    auto start = m_timer.get_time();
     m_graph->execute({m_pre_token}, m_logist, m_past);
+    auto end = m_timer.get_time();
+    m_time_cost += end - start;
     sample_and_update();
     m_past++;
     token = m_pre_token;
@@ -63,6 +72,9 @@ int32_t ModelImp::sample_and_update() {
     m_last_queue.push_back(token);
     m_last_queue.pop_front();
     m_pre_token = token;
+    if (token == m_end_token) {
+        m_device->deactive();
+    }
     return token;
 }
 
@@ -117,4 +129,13 @@ std::vector<Vocab::Id> ModelImp::tokenize(const std::string& text,
     std::reverse(res.begin(), res.end());
 
     return res;
+}
+
+std::string ModelImp::decode_summary() const {
+    std::string ret = "Run Model Summary:\n";
+    ret += "Total Model Compute Time:   " + std::to_string(m_time_cost) + "s\n";
+    ret += "Total Model Compute Token:  " + std::to_string(m_past) + "\n";
+    ret += "Average Token Compute Time: " +
+           std::to_string(m_time_cost * 1000 / m_past) + "ms\n";
+    return ret;
 }

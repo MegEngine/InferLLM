@@ -13,9 +13,11 @@ void Model::load(const std::string& model_path) {
 }
 
 //! allocate memory for the model
-void Model::init(uint32_t top_k, float top_p, float temp,
-                 float repeat_penalty , int repeat_last_n, int32_t seed) {
-    m_model_imp->init(top_k, top_p, temp, repeat_penalty, repeat_last_n, seed);
+void Model::init(
+        uint32_t top_k, float top_p, float temp, float repeat_penalty,
+        int repeat_last_n, int32_t seed, int32_t end_token) {
+    m_model_imp->init(
+            top_k, top_p, temp, repeat_penalty, repeat_last_n, seed, end_token);
 }
 
 uint32_t Model::get_remain_token() {
@@ -39,4 +41,8 @@ std::string Model::decode(const std::string& user_input, int& token) {
 //! decode the answer one by one
 std::string Model::decode_iter(int& token) {
     return m_model_imp->decode_iter(token);
+}
+
+std::string Model::decode_summary() const {
+    return m_model_imp->decode_summary();
 }

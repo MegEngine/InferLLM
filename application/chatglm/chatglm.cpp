@@ -8,12 +8,19 @@
 #include <thread>
 #include <vector>
 
+#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
+#include <signal.h>
+#include <unistd.h>
+#elif defined(_WIN32)
+#include <signal.h>
+#include <windows.h>
+#endif
+
 #include "model.h"
 
 struct app_params {
-    int32_t seed = -1;  // RNG seed
-    int32_t n_threads =
-            std::min(4, (int32_t)std::thread::hardware_concurrency());
+    int32_t seed = -1;           // RNG seed
+    int32_t n_threads = std::min(4, (int32_t)std::thread::hardware_concurrency());
     int32_t n_predict = 128;     // new tokens to predict
     int32_t repeat_last_n = 64;  // last n tokens to penalize
     int32_t n_ctx = 2048;        // context size
@@ -24,33 +31,55 @@ struct app_params {
     float temp = 0.10f;
     float repeat_penalty = 1.30f;
 
-    std::string model ;  // model path
+    std::string model;              // model path
 
-    bool use_color = true;  // use color to distinguish generations and inputs
-    bool use_mmap = false;  // use mmap to load model
+    bool use_color = true;          // use color to distinguish generations and inputs
+    bool use_mmap = false;          // use mmap to load model
     std::string dtype = "float32";  // configure the compute dtype
     std::string mtype = "chatglm";  // the model type name, llama
 };
 
-void app_print_usage(int argc, char ** argv, const app_params & params) {
+void app_print_usage(int argc, char** argv, const app_params& params) {
     fprintf(stderr, "usage: %s [options]\n", argv[0]);
     fprintf(stderr, "\n");
     fprintf(stderr, "options:\n");
     fprintf(stderr, "  -h, --help            show this help message and exit\n");
-    fprintf(stderr, "  --color               colorise output to distinguish prompt and user input from generations\n");
+    fprintf(stderr,
+            "  --color               colorise output to distinguish prompt and user "
+            "input from generations\n");
     fprintf(stderr, "  -s SEED, --seed SEED  RNG seed (default: -1)\n");
-    fprintf(stderr, "  -t N, --threads N     number of threads to use during computation (default: %d)\n", params.n_threads);
-    fprintf(stderr, "  --top_k N             top-k sampling (default: %d)\n", params.top_k);
-    fprintf(stderr, "  --top_p N             top-p sampling (default: %.1f)\n", params.top_p);
-    fprintf(stderr, "  --repeat_last_n N     last n tokens to consider for penalize (default: %d)\n", params.repeat_last_n);
-    fprintf(stderr, "  --repeat_penalty N    penalize repeat sequence of tokens (default: %.1f)\n", params.repeat_penalty);
-    fprintf(stderr, "  -c N, --ctx_size N    size of the prompt context (default: %d)\n", params.n_ctx);
-    fprintf(stderr, "  --temp N              temperature (default: %.1f)\n", params.temp);
+    fprintf(stderr,
+            "  -t N, --threads N     number of threads to use during computation "
+            "(default: %d)\n",
+            params.n_threads);
+    fprintf(stderr, "  --top_k N             top-k sampling (default: %d)\n",
+            params.top_k);
+    fprintf(stderr, "  --top_p N             top-p sampling (default: %.1f)\n",
+            params.top_p);
+    fprintf(stderr,
+            "  --repeat_last_n N     last n tokens to consider for penalize (default: "
+            "%d)\n",
+            params.repeat_last_n);
+    fprintf(stderr,
+            "  --repeat_penalty N    penalize repeat sequence of tokens (default: "
+            "%.1f)\n",
+            params.repeat_penalty);
+    fprintf(stderr,
+            "  -c N, --ctx_size N    size of the prompt context (default: %d)\n",
+            params.n_ctx);
+    fprintf(stderr, "  --temp N              temperature (default: %.1f)\n",
+            params.temp);
     fprintf(stderr, "  -m FNAME, --model FNAME\n");
-    fprintf(stderr, "                        model path (default: %s)\n", params.model.c_str());
-    fprintf(stderr, "  --mmap                enable mmap when read weights, default = false\n");
-    fprintf(stderr, "  -d type               configure the compute type, default float32, can be float32 and flot16 now.\n");
-    fprintf(stderr, "  --model_type type     the model type name, default llama, can only be llama now.\n");
+    fprintf(stderr, "                        model path (default: %s)\n",
+            params.model.c_str());
+    fprintf(stderr,
+            "  --mmap                enable mmap when read weights, default = false\n");
+    fprintf(stderr,
+            "  -d type               configure the compute type, default float32, can "
+            "be float32 and flot16 now.\n");
+    fprintf(stderr,
+            "  --model_type type     the model type name, default llama, can only be "
+            "llama now.\n");
     fprintf(stderr, "\n");
 }
 
@@ -92,6 +121,17 @@ bool app_params_parse(int argc, char** argv, app_params& params) {
     return true;
 }
 
+std::string running_summary;
+#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__)) || defined(_WIN32)
+void sigint_handler(int signo) {
+    if (signo == SIGINT) {
+        printf("\n");
+        printf("%s", running_summary.c_str());
+        _exit(130);
+    }
+};
+#endif
+
 int main(int argc, char** argv) {
     app_params params;
 
@@ -117,8 +157,9 @@ int main(int argc, char** argv) {
     std::shared_ptr<inferllm::Model> model =
             std::make_shared<inferllm::Model>(config, params.mtype);
     model->load(params.model);
-    model->init(params.top_k, params.top_p, params.temp, params.repeat_penalty,
-                params.repeat_last_n, params.seed);
+    model->init(
+            params.top_k, params.top_p, params.temp, params.repeat_penalty,
+            params.repeat_last_n, params.seed, 130005);
 
     // print the basic parameters
     fprintf(stderr, "%s: interactive mode on.\n", __func__);
@@ -133,12 +174,23 @@ int main(int argc, char** argv) {
 
     fprintf(stderr,
             "== 运行模型中. ==\n"
-#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__)) || \
-        defined(_WIN32)
+#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__)) || defined(_WIN32)
             " - 输入 Ctrl+C 将在推出程序.\n"
 #endif
             " - 如果你想换行，请在行末输入'\\'符号.\n");
 
+#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
+    struct sigaction sigint_action;
+    sigint_action.sa_handler = sigint_handler;
+    sigemptyset(&sigint_action.sa_mask);
+    sigint_action.sa_flags = 0;
+    sigaction(SIGINT, &sigint_action, NULL);
+#elif defined(_WIN32)
+    auto console_ctrl_handler = +[](DWORD ctrl_type) -> BOOL {
+        return (ctrl_type == CTRL_C_EVENT) ? (sigint_handler(SIGINT), true) : false;
+    };
+    SetConsoleCtrlHandler(static_cast<PHANDLER_ROUTINE>(console_ctrl_handler), true);
+#endif
     // prompt user immediately after the starting prompt has been loaded
     auto fix_word = [](std::string& word) {
         auto ret = word;
@@ -156,9 +208,8 @@ int main(int argc, char** argv) {
             word.replace(pos, pos + 3, " ");
         }
         // Fix utf-8 garbled characters
-        if (word.length() == 6 && word[0] == '<' &&
-            word[word.length() - 1] == '>' && word[1] == '0' &&
-            word[2] == 'x') {
+        if (word.length() == 6 && word[0] == '<' && word[word.length() - 1] == '>' &&
+            word[1] == '0' && word[2] == 'x') {
             int num = std::stoi(word.substr(3, 2), nullptr, 16);
             word = static_cast<char>(num);
         }
@@ -186,6 +237,7 @@ int main(int argc, char** argv) {
             // token 2 is the end of the instruction
             if (token == 130005) {
                 printf("\n");
+                running_summary = model->decode_summary();
                 is_interacting = true;
             }
             output.clear();
@@ -217,9 +269,5 @@ int main(int argc, char** argv) {
             }
         }
     }
-
-#if defined(_WIN32)
-    signal(SIGINT, SIG_DFL);
-#endif
     return 0;
 }
