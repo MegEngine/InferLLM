@@ -34,9 +34,9 @@ Running ChatGLM model please refer to [ChatGLM model documentation](./applicatio
 
 If it is executed locally, execute `./chatglm -m chatglm-q4.bin -t 4` directly. If you want to execute it on your mobile phone, you can use the adb command to copy alpaca and the model file to your mobile phone, and then execute `adb shell ./chatglm -m chatglm-q4.bin -t 4`. 
 - x86 is：Intel(R) Xeon(R) CPU E5-2620 v4 @ 2.10GHz
-![x86 running](./asserts/ChatGLM-x86.gif )
+![x86 running](./assets/ChatGLM-x86.gif )
 - android is xiaomi9，Qualcomm SM8150 Snapdragon 855
-![android running](./asserts/arm-mi9.gif)
+![android running](./assets/arm-mi9.gif)
 
 ### supported model
 Now InferLLM supports [ChatGLM-6B](https://github.com/THUDM/ChatGLM-6B), [llama](https://github.com/facebookresearch/llama), [alpaca](https://crfm.stanford.edu/2023/03/13/alpaca.html) models.
