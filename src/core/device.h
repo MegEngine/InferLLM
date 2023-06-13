@@ -4,12 +4,10 @@
 #include <map>
 
 #include "kern/kernel.h"
-#include "utils.h"
 #include "thread_pool.h"
+#include "utils.h"
 
 namespace inferllm {
-
-
 
 class Tensor;
 
@@ -31,8 +29,8 @@ public:
     void free_device(void* ptr);
 
     //! move the source data from the device
-    void move_data_into(void* dst_data, void* src_data, size_t size,
-                        const Device& device) {}
+    void move_data_into(
+            void* dst_data, void* src_data, size_t size, const Device& device) {}
 
     Kernel* kernel() { return m_kernel.get(); }
 
@@ -49,4 +47,3 @@ private:
 };
 
 }  // namespace inferllm
-

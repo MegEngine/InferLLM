@@ -2,16 +2,15 @@
 #if INFER_X86
 #include <assert.h>
 #include <immintrin.h>
+#include "common.h"
 #include "core/tensor.h"
 #include "kern/kernel_define.h"
-#include "common.h"
 
 namespace inferllm {
 namespace opt {
 
 INFER_ATTRIBUTE_TARGET("avx2")
-inline void quantize_row_q4_0(const float* __restrict x, void* __restrict vy,
-                              int k) {
+inline void quantize_row_q4_0(const float* __restrict x, void* __restrict vy, int k) {
     const int nb = k / QK40;
 
     BlockQ40* __restrict y = static_cast<BlockQ40*>(vy);
@@ -31,8 +30,8 @@ inline void quantize_row_q4_0(const float* __restrict x, void* __restrict vy,
         maxAbs = _mm256_max_ps(maxAbs, _mm256_andnot_ps(signBit, v2));
         maxAbs = _mm256_max_ps(maxAbs, _mm256_andnot_ps(signBit, v3));
 
-        __m128 max4 = _mm_max_ps(_mm256_extractf128_ps(maxAbs, 1),
-                                 _mm256_castps256_ps128(maxAbs));
+        __m128 max4 = _mm_max_ps(
+                _mm256_extractf128_ps(maxAbs, 1), _mm256_castps256_ps128(maxAbs));
         max4 = _mm_max_ps(max4, _mm_movehl_ps(max4, max4));
         max4 = _mm_max_ss(max4, _mm_movehdup_ps(max4));
         const float maxScalar = _mm_cvtss_f32(max4);
@@ -68,10 +67,9 @@ inline void quantize_row_q4_0(const float* __restrict x, void* __restrict vy,
         i2 = _mm256_packs_epi32(
                 i2, i3);  // 16, 17, 18, 19,  24, 25, 26, 27,  20, 21, 22, 23,
                           // 28, 29, 30, 31 Convert int16 to int8
-        i0 = _mm256_packs_epi16(
-                i0, i2);  // 0, 1, 2, 3,  8, 9, 10, 11,  16, 17, 18, 19,  24,
-                          // 25, 26, 27,  4, 5, 6, 7, 12, 13, 14, 15, 20, 21,
-                          // 22, 23, 28, 29, 30, 31
+        i0 = _mm256_packs_epi16(i0, i2);  // 0, 1, 2, 3,  8, 9, 10, 11,  16, 17, 18, 19,
+                                          // 24, 25, 26, 27,  4, 5, 6, 7, 12, 13, 14,
+                                          // 15, 20, 21, 22, 23, 28, 29, 30, 31
 
         // We got our precious signed bytes, but the order is now wrong
         // These AVX2 pack instructions process 16-byte pieces independently
@@ -91,8 +89,7 @@ inline void quantize_row_q4_0(const float* __restrict x, void* __restrict vy,
 }
 
 INFER_ATTRIBUTE_TARGET("avx2")
-inline void dequantize_row_q4_0(const void* __restrict vx, float* __restrict y,
-                                int k) {
+inline void dequantize_row_q4_0(const void* __restrict vx, float* __restrict y, int k) {
     assert(k % QK40 == 0);
     const int nb = k / QK40;
 
@@ -138,8 +135,7 @@ inline void dequantize_row_q4_0(const void* __restrict vx, float* __restrict y,
 }
 
 INFER_ATTRIBUTE_TARGET("avx")
-inline void quantize_row_q4_0(const float* __restrict x, void* __restrict vy,
-                              int k) {
+inline void quantize_row_q4_0(const float* __restrict x, void* __restrict vy, int k) {
     const int nb = k / QK40;
 
     BlockQ40* __restrict y = static_cast<BlockQ40*>(vy);
@@ -159,8 +155,8 @@ inline void quantize_row_q4_0(const float* __restrict x, void* __restrict vy,
         maxAbs = _mm256_max_ps(maxAbs, _mm256_andnot_ps(signBit, v2));
         maxAbs = _mm256_max_ps(maxAbs, _mm256_andnot_ps(signBit, v3));
 
-        __m128 max4 = _mm_max_ps(_mm256_extractf128_ps(maxAbs, 1),
-                                 _mm256_castps256_ps128(maxAbs));
+        __m128 max4 = _mm_max_ps(
+                _mm256_extractf128_ps(maxAbs, 1), _mm256_castps256_ps128(maxAbs));
         max4 = _mm_max_ps(max4, _mm_movehl_ps(max4, max4));
         max4 = _mm_max_ss(max4, _mm_movehdup_ps(max4));
         const float maxScalar = _mm_cvtss_f32(max4);
@@ -222,8 +218,7 @@ inline void quantize_row_q4_0(const float* __restrict x, void* __restrict vy,
 }
 
 INFER_ATTRIBUTE_TARGET("default")
-inline void quantize_row_q4_0(const float* __restrict x, void* __restrict vy,
-                              int k) {
+inline void quantize_row_q4_0(const float* __restrict x, void* __restrict vy, int k) {
     const int nb = k / QK40;
 
     BlockQ40* __restrict y = static_cast<BlockQ40*>(vy);
@@ -232,8 +227,7 @@ inline void quantize_row_q4_0(const float* __restrict x, void* __restrict vy,
 }
 
 INFER_ATTRIBUTE_TARGET("default")
-inline void dequantize_row_q4_0(const void* __restrict vx, float* __restrict y,
-                                int k) {
+inline void dequantize_row_q4_0(const void* __restrict vx, float* __restrict y, int k) {
     assert(k % QK40 == 0);
     const int nb = k / QK40;
 
@@ -264,8 +258,7 @@ inline void dequantize_row_q4_0(const void* __restrict vx, float* __restrict y,
 }
 
 INFER_ATTRIBUTE_TARGET("default")
-inline void quantize_row_q8_0(const float* __restrict x, void* __restrict vy,
-                              int k) {
+inline void quantize_row_q8_0(const float* __restrict x, void* __restrict vy, int k) {
     assert(k % QK80 == 0);
     BlockQ80* y = static_cast<BlockQ80*>(vy);
     naive::quantize_row_q8_0_reference(x, y, k);

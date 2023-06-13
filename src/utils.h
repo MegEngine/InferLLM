@@ -97,15 +97,12 @@ private:
 //   - consider only the top K tokens
 //   - from them, consider only the top tokens with cumulative probability > P
 //
-Vocab::Id llama_sample_top_p_top_k(const Vocab& vocab, const float* logits,
-                                   std::list<Vocab::Id>& last_n_tokens,
-                                   double repeat_penalty, int top_k,
-                                   double top_p, double temp,
-                                   std::mt19937& rng);
+Vocab::Id llama_sample_top_p_top_k(
+        const Vocab& vocab, const float* logits, std::list<Vocab::Id>& last_n_tokens,
+        double repeat_penalty, int top_k, double top_p, double temp, std::mt19937& rng);
 
 // filer to top K tokens from list of logits
-void sample_top_k(std::vector<std::pair<double, Vocab::Id>>& logits_id,
-                  int top_k);
+void sample_top_k(std::vector<std::pair<double, Vocab::Id>>& logits_id, int top_k);
 
 std::string format(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 
@@ -117,7 +114,7 @@ std::string format(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 //! branch prediction hint: unlikely to take
 #define infer_unlikely(v) __builtin_expect(static_cast<bool>(v), 0)
 
-#define INFER_LOG(format, ...) fprintf(stderr, format, ##__VA_ARGS__)
+#define INFER_LOG(format, ...)   fprintf(stderr, format, ##__VA_ARGS__)
 #define INFER_ERROR(format, ...) fprintf(stderr, format, ##__VA_ARGS__)
 
 #define INFER_ASSERT(expr, message)                                           \

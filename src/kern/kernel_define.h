@@ -5,9 +5,9 @@
 #include <stdint.h>
 #include <vector>
 
-#define PI (3.1415)
-#define PGELU (0.044715)
-#define INFER_ATTRIBUTE_TARGET(simd)   __attribute__((target(simd)))
+#define PI                           (3.1415)
+#define PGELU                        (0.044715)
+#define INFER_ATTRIBUTE_TARGET(simd) __attribute__((target(simd)))
 namespace inferllm {
 
 template <class Dtype>
@@ -74,7 +74,7 @@ struct BlockQ40 {
 
 #define QK80 32
 struct BlockQ80 {
-    float d;           // delta
+    float d;          // delta
     int8_t qs[QK80];  // nibbles
 };
 }  // namespace inferllm

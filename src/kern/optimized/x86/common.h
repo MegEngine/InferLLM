@@ -9,55 +9,52 @@ namespace inferllm {
 namespace opt {
 
 INFER_ATTRIBUTE_TARGET("avx2")
-static inline __m128i packNibbles( __m256i bytes )
-{
+static inline __m128i packNibbles(__m256i bytes) {
     // Move bits within 16-bit lanes from 0000_abcd_0000_efgh into 0000_0000_abcd_efgh
-    const __m256i lowByte = _mm256_set1_epi16( 0xFF );
-    __m256i high = _mm256_andnot_si256( lowByte, bytes );
-    __m256i low = _mm256_and_si256( lowByte, bytes );
-    high = _mm256_srli_epi16( high, 4 );
-    bytes = _mm256_or_si256( low, high );
+    const __m256i lowByte = _mm256_set1_epi16(0xFF);
+    __m256i high = _mm256_andnot_si256(lowByte, bytes);
+    __m256i low = _mm256_and_si256(lowByte, bytes);
+    high = _mm256_srli_epi16(high, 4);
+    bytes = _mm256_or_si256(low, high);
 
     // Compress uint16_t lanes into bytes
-    __m128i r0 = _mm256_castsi256_si128( bytes );
-    __m128i r1 = _mm256_extracti128_si256( bytes, 1 );
-    return _mm_packus_epi16( r0, r1 );
+    __m128i r0 = _mm256_castsi256_si128(bytes);
+    __m128i r1 = _mm256_extracti128_si256(bytes, 1);
+    return _mm_packus_epi16(r0, r1);
 }
 
 INFER_ATTRIBUTE_TARGET("avx")
-static inline __m128i packNibbles( __m128i bytes1, __m128i bytes2 )
-{
+static inline __m128i packNibbles(__m128i bytes1, __m128i bytes2) {
     // Move bits within 16-bit lanes from 0000_abcd_0000_efgh into 0000_0000_abcd_efgh
-    const __m128i lowByte = _mm_set1_epi16( 0xFF );
-    __m128i high = _mm_andnot_si128( lowByte, bytes1 );
-    __m128i low = _mm_and_si128( lowByte, bytes1 );
-    high = _mm_srli_epi16( high, 4 );
-    bytes1 = _mm_or_si128( low, high );
-    high = _mm_andnot_si128( lowByte, bytes2 );
-    low = _mm_and_si128( lowByte, bytes2 );
-    high = _mm_srli_epi16( high, 4 );
-    bytes2 = _mm_or_si128( low, high );
+    const __m128i lowByte = _mm_set1_epi16(0xFF);
+    __m128i high = _mm_andnot_si128(lowByte, bytes1);
+    __m128i low = _mm_and_si128(lowByte, bytes1);
+    high = _mm_srli_epi16(high, 4);
+    bytes1 = _mm_or_si128(low, high);
+    high = _mm_andnot_si128(lowByte, bytes2);
+    low = _mm_and_si128(lowByte, bytes2);
+    high = _mm_srli_epi16(high, 4);
+    bytes2 = _mm_or_si128(low, high);
 
-    return _mm_packus_epi16( bytes1, bytes2);
+    return _mm_packus_epi16(bytes1, bytes2);
 }
 
 // Unpack 32 4-bit fields into 32 bytes
 // The output vector contains 32 bytes, each one in [ 0 .. 15 ] interval
 INFER_ATTRIBUTE_TARGET("avx2")
-static inline __m256i bytesFromNibbles( const uint8_t* rsi )
-{
+static inline __m256i bytesFromNibbles(const uint8_t* rsi) {
     // Load 16 bytes from memory
-    __m128i tmp = _mm_loadu_si128( ( const __m128i* )rsi );
+    __m128i tmp = _mm_loadu_si128((const __m128i*)rsi);
 
     // Expand bytes into uint16_t values
-    __m256i bytes = _mm256_cvtepu8_epi16( tmp );
+    __m256i bytes = _mm256_cvtepu8_epi16(tmp);
 
     // Unpack values into individual bytes
-    const __m256i lowMask = _mm256_set1_epi8( 0xF );
-    __m256i high = _mm256_andnot_si256( lowMask, bytes );
-    __m256i low = _mm256_and_si256( lowMask, bytes );
-    high = _mm256_slli_epi16( high, 4 );
-    bytes = _mm256_or_si256( low, high );
+    const __m256i lowMask = _mm256_set1_epi8(0xF);
+    __m256i high = _mm256_andnot_si256(lowMask, bytes);
+    __m256i low = _mm256_and_si256(lowMask, bytes);
+    high = _mm256_slli_epi16(high, 4);
+    bytes = _mm256_or_si256(low, high);
     return bytes;
 }
 
@@ -91,23 +88,21 @@ static inline float hsum_float_8(const __m256 x) {
 // Unpack 16 4-bit fields into 16 bytes
 // The output vector contains 16 bytes, each one in [ 0 .. 15 ] interval
 INFER_ATTRIBUTE_TARGET("avx2")
-static inline __m128i bytes_from_nibbles_16(const uint8_t * rsi)
-{
+static inline __m128i bytes_from_nibbles_16(const uint8_t* rsi) {
     // Load 8 bytes from memory
-    __m128i tmp = _mm_loadl_epi64( ( const __m128i* )rsi );
+    __m128i tmp = _mm_loadl_epi64((const __m128i*)rsi);
 
     // Expand bytes into uint16_t values
-    __m128i bytes = _mm_cvtepu8_epi16( tmp );
+    __m128i bytes = _mm_cvtepu8_epi16(tmp);
 
     // Unpack values into individual bytes
-    const __m128i lowMask = _mm_set1_epi8( 0xF );
-    __m128i high = _mm_andnot_si128( lowMask, bytes );
-    __m128i low = _mm_and_si128( lowMask, bytes );
-    high = _mm_slli_epi16( high, 4 );
-    bytes = _mm_or_si128( low, high );
+    const __m128i lowMask = _mm_set1_epi8(0xF);
+    __m128i high = _mm_andnot_si128(lowMask, bytes);
+    __m128i low = _mm_and_si128(lowMask, bytes);
+    high = _mm_slli_epi16(high, 4);
+    bytes = _mm_or_si128(low, high);
     return bytes;
 }
-
 
 /* __m128 is ugly to write */
 typedef __m256 v8sf;   // vector of 8 float (avx)
@@ -117,9 +112,9 @@ typedef __m128i v4si;  // vector of 8 int   (avx)
 #define ALIGN32_BEG
 #define ALIGN32_END __attribute__((aligned(32)))
 
-#define _PS256_CONST(Name, Val)                                     \
-    static const ALIGN32_BEG float _ps256_##Name[8] ALIGN32_END = { \
-            Val, Val, Val, Val, Val, Val, Val, Val}
+#define _PS256_CONST(Name, Val)                                                        \
+    static const ALIGN32_BEG float _ps256_##Name[8] ALIGN32_END = {Val, Val, Val, Val, \
+                                                                   Val, Val, Val, Val}
 
 #define _PI32_CONST256(Name, Val)                                    \
     static const ALIGN32_BEG int _pi32_256_##Name[8] ALIGN32_END = { \

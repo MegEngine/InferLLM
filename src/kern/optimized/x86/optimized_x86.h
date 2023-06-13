@@ -2,16 +2,16 @@
 #if INFER_X86
 #include <assert.h>
 #include <immintrin.h>
+#include "common.h"
 #include "core/tensor.h"
 #include "kern/kernel_define.h"
-#include "common.h"
 
 namespace inferllm {
 namespace opt {
 
 INFER_ATTRIBUTE_TARGET("avx2")
-inline float vec_vec_dot_q4_0(const int n, const void* __restrict x,
-                               const void* __restrict y) {
+inline float vec_vec_dot_q4_0(
+        const int n, const void* __restrict x, const void* __restrict y) {
     const int nb = n / QK40;
 
     assert(n % QK40 == 0);
@@ -22,10 +22,8 @@ inline float vec_vec_dot_q4_0(const int n, const void* __restrict x,
     const uint8_t* __restrict pd0 = ((const uint8_t*)x + 0 * bs);
     const uint8_t* __restrict pd1 = ((const uint8_t*)y + 0 * bs);
 
-    const uint8_t* __restrict pb0 =
-            ((const uint8_t*)x + 0 * bs + sizeof(float));
-    const uint8_t* __restrict pb1 =
-            ((const uint8_t*)y + 0 * bs + sizeof(float));
+    const uint8_t* __restrict pb0 = ((const uint8_t*)x + 0 * bs + sizeof(float));
+    const uint8_t* __restrict pb1 = ((const uint8_t*)y + 0 * bs + sizeof(float));
 
     float sumf = 0.0;
 
@@ -43,8 +41,8 @@ inline float vec_vec_dot_q4_0(const int n, const void* __restrict x,
         const uint8_t* __restrict p1 = pb1 + i * bs;
 
         // Compute combined scale for the block
-        const __m256 scale = _mm256_mul_ps(_mm256_broadcast_ss(d0_0),
-                                           _mm256_broadcast_ss(d1_0));
+        const __m256 scale =
+                _mm256_mul_ps(_mm256_broadcast_ss(d0_0), _mm256_broadcast_ss(d1_0));
 
         // Load 16 bytes, and unpack 4 bit fields into bytes, making 32 bytes
         __m256i bx = bytesFromNibbles(p0);
@@ -90,8 +88,8 @@ inline float vec_vec_dot_q4_0(const int n, const void* __restrict x,
 }
 
 INFER_ATTRIBUTE_TARGET("default")
-inline float vec_vec_dot_q4_0(const int n, const void* __restrict x,
-                               const void* __restrict y) {
+inline float vec_vec_dot_q4_0(
+        const int n, const void* __restrict x, const void* __restrict y) {
     const int nb = n / QK40;
 
     assert(n % QK40 == 0);
@@ -102,10 +100,8 @@ inline float vec_vec_dot_q4_0(const int n, const void* __restrict x,
     const uint8_t* __restrict pd0 = ((const uint8_t*)x + 0 * bs);
     const uint8_t* __restrict pd1 = ((const uint8_t*)y + 0 * bs);
 
-    const uint8_t* __restrict pb0 =
-            ((const uint8_t*)x + 0 * bs + sizeof(float));
-    const uint8_t* __restrict pb1 =
-            ((const uint8_t*)y + 0 * bs + sizeof(float));
+    const uint8_t* __restrict pb0 = ((const uint8_t*)x + 0 * bs + sizeof(float));
+    const uint8_t* __restrict pb1 = ((const uint8_t*)y + 0 * bs + sizeof(float));
 
     float sumf = 0.0;
 
@@ -134,8 +130,8 @@ inline float vec_vec_dot_q4_0(const int n, const void* __restrict x,
 }
 
 INFER_ATTRIBUTE_TARGET("avx2")
-inline float vec_vec_dot_q40_with_q80(const int n, const void* __restrict vx,
-                                      const void* __restrict vy) {
+inline float vec_vec_dot_q40_with_q80(
+        const int n, const void* __restrict vx, const void* __restrict vy) {
     const int nb = n / QK80;
 
     assert(n % QK80 == 0);
@@ -150,15 +146,17 @@ inline float vec_vec_dot_q40_with_q80(const int n, const void* __restrict vx,
     // Main loop
     for (int i = 0; i < nb; ++i) {
         /* Compute combined scale for the block */
-        const __m256 d = _mm256_mul_ps( _mm256_broadcast_ss( &x[i].d ), _mm256_broadcast_ss( &y[i].d ) );
+        const __m256 d = _mm256_mul_ps(
+                _mm256_broadcast_ss(&x[i].d), _mm256_broadcast_ss(&y[i].d));
 
         __m256i bx = bytesFromNibbles(x[i].qs);
 
-        // Now we have a vector with bytes in [ 0 .. 15 ] interval. Offset them into [ -8 .. +7 ] interval.
-        const __m256i off = _mm256_set1_epi8( 8 );
-        bx = _mm256_sub_epi8( bx, off );
+        // Now we have a vector with bytes in [ 0 .. 15 ] interval. Offset them into [
+        // -8 .. +7 ] interval.
+        const __m256i off = _mm256_set1_epi8(8);
+        bx = _mm256_sub_epi8(bx, off);
 
-        __m256i by = _mm256_loadu_si256((const __m256i *)y[i].qs);
+        __m256i by = _mm256_loadu_si256((const __m256i*)y[i].qs);
 
         const __m256 q = mul_sum_i8_pairs_float(bx, by);
 
@@ -175,8 +173,8 @@ inline float vec_vec_dot_q40_with_q80(const int n, const void* __restrict vx,
 }
 
 INFER_ATTRIBUTE_TARGET("avx")
-inline float vec_vec_dot_q40_with_q80(const int n, const void* __restrict vx,
-                                      const void* __restrict vy) {
+inline float vec_vec_dot_q40_with_q80(
+        const int n, const void* __restrict vx, const void* __restrict vy) {
     const int nb = n / QK80;
 
     assert(n % QK80 == 0);
@@ -190,17 +188,19 @@ inline float vec_vec_dot_q40_with_q80(const int n, const void* __restrict vx,
     // Main loop
     for (int i = 0; i < nb; ++i) {
         // Compute combined scale for the block
-        const __m256 d = _mm256_mul_ps( _mm256_broadcast_ss( &x[i].d ), _mm256_broadcast_ss( &y[i].d ) );
+        const __m256 d = _mm256_mul_ps(
+                _mm256_broadcast_ss(&x[i].d), _mm256_broadcast_ss(&y[i].d));
 
         __m128i i32[2];
         for (int j = 0; j < 2; ++j) {
             // Load 8 bytes, and unpack 4 bit fields into bytes, making 16 bytes
-            __m128i bx = bytes_from_nibbles_16(x[i].qs + 8*j);
-            __m128i by = _mm_loadu_si128((const __m128i *)(y[i].qs + 16*j));
+            __m128i bx = bytes_from_nibbles_16(x[i].qs + 8 * j);
+            __m128i by = _mm_loadu_si128((const __m128i*)(y[i].qs + 16 * j));
 
-            // Now we have a vector with bytes in [ 0 .. 15 ] interval. Offset them into [ -8 .. +7 ] interval.
-            const __m128i off = _mm_set1_epi8( 8 );
-            bx = _mm_sub_epi8( bx, off );
+            // Now we have a vector with bytes in [ 0 .. 15 ] interval. Offset them into
+            // [ -8 .. +7 ] interval.
+            const __m128i off = _mm_set1_epi8(8);
+            bx = _mm_sub_epi8(bx, off);
 
             // Get absolute values of x vectors
             const __m128i ax = _mm_sign_epi8(bx, bx);
@@ -217,19 +217,20 @@ inline float vec_vec_dot_q40_with_q80(const int n, const void* __restrict vx,
 
         // Convert int32_t to float
 #if !defined(__GNUC__) || defined(__INTEL_COMPILER)
-        __m256 p = _mm256_cvtepi32_ps( _mm256_set_m128i( i32[0], i32[1] ));
+        __m256 p = _mm256_cvtepi32_ps(_mm256_set_m128i(i32[0], i32[1]));
 #else
-        __m256 p = _mm256_cvtepi32_ps( _mm256_insertf128_si256( _mm256_castsi128_si256( i32[1] ), i32[0], 1 ));
+        __m256 p = _mm256_cvtepi32_ps(
+                _mm256_insertf128_si256(_mm256_castsi128_si256(i32[1]), i32[0], 1));
 #endif
         // Apply the scale, and accumulate
-        acc = _mm256_add_ps(_mm256_mul_ps( d, p ), acc);
+        acc = _mm256_add_ps(_mm256_mul_ps(d, p), acc);
     }
     return hsum_float_8(acc);
 }
 
 INFER_ATTRIBUTE_TARGET("default")
-inline float vec_vec_dot_q40_with_q80(const int n, const void* __restrict vx,
-                                      const void* __restrict vy) {
+inline float vec_vec_dot_q40_with_q80(
+        const int n, const void* __restrict vx, const void* __restrict vy) {
     const int nb = n / QK80;
     assert(n % QK80 == 0);
     assert(nb % 2 == 0);
@@ -263,8 +264,9 @@ inline float vec_vec_dot_q40_with_q80(const int n, const void* __restrict vx,
 }
 
 INFER_ATTRIBUTE_TARGET("avx2")
-inline void elemwise_vector_add(const int n, const float* __restrict x,
-                                const float* __restrict y, float* __restrict z) {
+inline void elemwise_vector_add(
+        const int n, const float* __restrict x, const float* __restrict y,
+        float* __restrict z) {
     const int nb32 = n / 32;
     const int nb8 = (n - nb32 * 32) / 8;
     const int left = n - nb32 * 32 - nb8 * 8;
@@ -312,17 +314,18 @@ inline void elemwise_vector_add(const int n, const float* __restrict x,
 }
 
 INFER_ATTRIBUTE_TARGET("default")
-inline void elemwise_vector_add(const int n, const float* __restrict x,
-                                const float* __restrict y,
-                                float* __restrict z) {
+inline void elemwise_vector_add(
+        const int n, const float* __restrict x, const float* __restrict y,
+        float* __restrict z) {
     for (int i = 0; i < n; i++) {
         z[i] = x[i] + y[i];
     }
 }
 
 INFER_ATTRIBUTE_TARGET("avx2")
-inline void elemwise_vector_mul(const int n, const float* __restrict x,
-                                const float* __restrict y, float* __restrict z) {
+inline void elemwise_vector_mul(
+        const int n, const float* __restrict x, const float* __restrict y,
+        float* __restrict z) {
     const int nb32 = n / 32;
     const int nb8 = (n - nb32 * 32) / 8;
     const int left = n - nb32 * 32 - nb8 * 8;
@@ -370,22 +373,22 @@ inline void elemwise_vector_mul(const int n, const float* __restrict x,
 }
 
 INFER_ATTRIBUTE_TARGET("default")
-inline void elemwise_vector_mul(const int n, const float* __restrict x,
-                                const float* __restrict y,
-                                float* __restrict z) {
+inline void elemwise_vector_mul(
+        const int n, const float* __restrict x, const float* __restrict y,
+        float* __restrict z) {
     for (int i = 0; i < n; i++) {
         z[i] = x[i] * y[i];
     }
 }
 
 INFER_ATTRIBUTE_TARGET("avx2")
-inline void elemwise_vector_silu(const int n, const float* __restrict x,
-                                 float* __restrict z) {
+inline void elemwise_vector_silu(
+        const int n, const float* __restrict x, float* __restrict z) {
     const int nb32 = n / 32;
     const int nb8 = (n - nb32 * 32) / 8;
     const int left = n - nb32 * 32 - nb8 * 8;
-    __m256 zero = _mm256_setzero_ps(); 
-    __m256 one = _mm256_set1_ps(1.0f);  
+    __m256 zero = _mm256_setzero_ps();
+    __m256 one = _mm256_set1_ps(1.0f);
     for (int b32 = 0; b32 < nb32; b32++) {
         const float* __restrict x32 = x + b32 * 32;
         float* __restrict z32 = z + b32 * 32;
@@ -433,26 +436,25 @@ inline void elemwise_vector_silu(const int n, const float* __restrict x,
 }
 
 INFER_ATTRIBUTE_TARGET("default")
-inline void elemwise_vector_silu(const int n, const float* __restrict x,
-                                 float* __restrict z) {
+inline void elemwise_vector_silu(
+        const int n, const float* __restrict x, float* __restrict z) {
     for (int i = 0; i < n; i++) {
         z[i] = x[i] / (1 + exp(-x[i]));
     }
 }
 
 INFER_ATTRIBUTE_TARGET("default")
-inline void elemwise_vector_gelu(const int n, const float* __restrict x,
-                                 float* __restrict z) {
+inline void elemwise_vector_gelu(
+        const int n, const float* __restrict x, float* __restrict z) {
     for (int i = 0; i < n; i++) {
         float src = x[i];
-        z[i] = 0.5 * src *
-               (1 + tanh(sqrt(2.0 / PI) * (src + PGELU * src * src * src)));
+        z[i] = 0.5 * src * (1 + tanh(sqrt(2.0 / PI) * (src + PGELU * src * src * src)));
     }
 }
 
 INFER_ATTRIBUTE_TARGET("avx2")
-inline void elemwise_vec_scale(const int n, const float* __restrict x,
-                               float scale, float* __restrict z) {
+inline void elemwise_vec_scale(
+        const int n, const float* __restrict x, float scale, float* __restrict z) {
     __m256 scalar_vec = _mm256_set1_ps(scale);
     int i = 0;
     for (; i + 7 < n; i += 8) {
@@ -466,8 +468,8 @@ inline void elemwise_vec_scale(const int n, const float* __restrict x,
 }
 
 INFER_ATTRIBUTE_TARGET("default")
-inline void elemwise_vec_scale(const int n, const float* __restrict x,
-                               float scale, float* __restrict z) {
+inline void elemwise_vec_scale(
+        const int n, const float* __restrict x, float scale, float* __restrict z) {
     int i = 0;
     for (; i < n; i++) {
         z[i] = x[i] * scale;
@@ -490,8 +492,7 @@ inline float reduce_square_sum(const int n, const float* __restrict x) {
         __m256 x_squared3 = _mm256_mul_ps(vx3, vx3);
         __m256 sum_vec_tmp0 = _mm256_add_ps(x_squared0, x_squared1);
         __m256 sum_vec_tmp1 = _mm256_add_ps(x_squared2, x_squared3);
-        sum_vec = _mm256_add_ps(sum_vec,
-                                _mm256_add_ps(sum_vec_tmp0, sum_vec_tmp1));
+        sum_vec = _mm256_add_ps(sum_vec, _mm256_add_ps(sum_vec_tmp0, sum_vec_tmp1));
     }
     for (; i + 7 < n; i += 8) {
         __m256 vx = _mm256_loadu_ps(x + i);
@@ -532,8 +533,7 @@ inline float reduce_max(const int n, const float* __restrict x) {
         __m256 vx3 = _mm256_loadu_ps(x + i + 24);
         __m256 sum_vec_tmp0 = _mm256_max_ps(vx0, vx1);
         __m256 sum_vec_tmp1 = _mm256_max_ps(vx2, vx3);
-        max_vec = _mm256_max_ps(max_vec,
-                                _mm256_max_ps(sum_vec_tmp0, sum_vec_tmp1));
+        max_vec = _mm256_max_ps(max_vec, _mm256_max_ps(sum_vec_tmp0, sum_vec_tmp1));
     }
     for (; i + 7 < n; i += 8) {
         __m256 vx = _mm256_loadu_ps(x + i);
@@ -566,10 +566,8 @@ inline float reduce_max(const int n, const float* __restrict x) {
 }
 
 INFER_ATTRIBUTE_TARGET("avx2")
-inline float select_sub_max_and_reduce_sum(const int n,
-                                           const float* __restrict x,
-                                           float* __restrict y,
-                                           const float max) {
+inline float select_sub_max_and_reduce_sum(
+        const int n, const float* __restrict x, float* __restrict y, const float max) {
     float result = 0.0f;
     __m256 infinit_v = _mm256_set1_ps(-INFINITY);
     __m256 zero_v = _mm256_setzero_ps();
@@ -636,10 +634,8 @@ inline float select_sub_max_and_reduce_sum(const int n,
 }
 
 INFER_ATTRIBUTE_TARGET("default")
-inline float select_sub_max_and_reduce_sum(const int n,
-                                           const float* __restrict x,
-                                           float* __restrict y,
-                                           const float max) {
+inline float select_sub_max_and_reduce_sum(
+        const int n, const float* __restrict x, float* __restrict y, const float max) {
     float sum = 0.0f;
     for (uint32_t i = 0; i < n; i++) {
         if (x[i] == -INFINITY) {
@@ -654,12 +650,10 @@ inline float select_sub_max_and_reduce_sum(const int n,
 }
 
 INFER_ATTRIBUTE_TARGET("avx2")
-inline void compute_src_offset_embd_matmul(const float* __restrict srcq_head,
-                                           int offsetq,
-                                           const float* __restrict srck_head,
-                                           int offsetk, float* dst_head,
-                                           int seqlen, int length,
-                                           int sub_embd) {
+inline void compute_src_offset_embd_matmul(
+        const float* __restrict srcq_head, int offsetq,
+        const float* __restrict srck_head, int offsetk, float* dst_head, int seqlen,
+        int length, int sub_embd) {
     for (uint32_t row = 0; row < seqlen; row++) {
         auto p_srcq = srcq_head + row * offsetq;
         uint32_t len = 0;
@@ -689,18 +683,22 @@ inline void compute_src_offset_embd_matmul(const float* __restrict srcq_head,
                 __m256 kv21 = _mm256_loadu_ps(p_srck2 + k + 8);
                 __m256 kv31 = _mm256_loadu_ps(p_srck3 + k + 8);
 
-                sum0v = _mm256_add_ps(sum0v,
-                                      _mm256_add_ps(_mm256_mul_ps(qv0, kv00),
-                                                    _mm256_mul_ps(qv1, kv01)));
-                sum1v = _mm256_add_ps(sum1v,
-                                      _mm256_add_ps(_mm256_mul_ps(qv0, kv10),
-                                                    _mm256_mul_ps(qv1, kv11)));
-                sum2v = _mm256_add_ps(sum2v,
-                                      _mm256_add_ps(_mm256_mul_ps(qv0, kv20),
-                                                    _mm256_mul_ps(qv1, kv21)));
-                sum3v = _mm256_add_ps(sum3v,
-                                      _mm256_add_ps(_mm256_mul_ps(qv0, kv30),
-                                                    _mm256_mul_ps(qv1, kv31)));
+                sum0v = _mm256_add_ps(
+                        sum0v,
+                        _mm256_add_ps(
+                                _mm256_mul_ps(qv0, kv00), _mm256_mul_ps(qv1, kv01)));
+                sum1v = _mm256_add_ps(
+                        sum1v,
+                        _mm256_add_ps(
+                                _mm256_mul_ps(qv0, kv10), _mm256_mul_ps(qv1, kv11)));
+                sum2v = _mm256_add_ps(
+                        sum2v,
+                        _mm256_add_ps(
+                                _mm256_mul_ps(qv0, kv20), _mm256_mul_ps(qv1, kv21)));
+                sum3v = _mm256_add_ps(
+                        sum3v,
+                        _mm256_add_ps(
+                                _mm256_mul_ps(qv0, kv30), _mm256_mul_ps(qv1, kv31)));
             }
             for (; k + 7 < sub_embd; k += 8) {
                 __m256 qv = _mm256_loadu_ps(p_srcq + k);
@@ -772,12 +770,10 @@ inline void compute_src_offset_embd_matmul(const float* __restrict srcq_head,
 }
 
 INFER_ATTRIBUTE_TARGET("default")
-inline void compute_src_offset_embd_matmul(const float* __restrict srcq_head,
-                                           int offsetq,
-                                           const float* __restrict srck_head,
-                                           int offsetk, float* dst_head,
-                                           int seqlen, int length,
-                                           int sub_embd) {
+inline void compute_src_offset_embd_matmul(
+        const float* __restrict srcq_head, int offsetq,
+        const float* __restrict srck_head, int offsetk, float* dst_head, int seqlen,
+        int length, int sub_embd) {
     for (uint32_t row = 0; row < seqlen; row++) {
         auto p_srcq = srcq_head + row * offsetq;
         uint32_t len = 0;
@@ -913,12 +909,9 @@ inline void comput_matmul_with_dst_uncontinue(
 }
 
 INFER_ATTRIBUTE_TARGET("default")
-inline void comput_matmul_with_dst_uncontinue(float* __restrict dst,
-                                              int offset_dst,
-                                              const float* __restrict srcv,
-                                              int offset_v,
-                                              const float* __restrict srcqk,
-                                              int seqlen, int length, int K) {
+inline void comput_matmul_with_dst_uncontinue(
+        float* __restrict dst, int offset_dst, const float* __restrict srcv,
+        int offset_v, const float* __restrict srcqk, int seqlen, int length, int K) {
     for (uint32_t row = 0; row < seqlen; row++) {
         auto p_qk = srcqk + row * length;
         for (uint32_t len = 0; len < K; len++) {

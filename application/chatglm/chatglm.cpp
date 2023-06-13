@@ -19,7 +19,7 @@
 #include "model.h"
 
 struct app_params {
-    int32_t seed = -1;           // RNG seed
+    int32_t seed = -1;  // RNG seed
     int32_t n_threads = std::min(4, (int32_t)std::thread::hardware_concurrency());
     int32_t n_predict = 128;     // new tokens to predict
     int32_t repeat_last_n = 64;  // last n tokens to penalize
@@ -31,7 +31,7 @@ struct app_params {
     float temp = 0.10f;
     float repeat_penalty = 1.30f;
 
-    std::string model;              // model path
+    std::string model;  // model path
 
     bool use_color = true;          // use color to distinguish generations and inputs
     bool use_mmap = false;          // use mmap to load model

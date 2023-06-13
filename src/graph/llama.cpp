@@ -11,14 +11,14 @@ void LlamaGraph::set_weights_alias() {
             {"layers.x.feed_forward.w2.weight", "layers.x.ffn.w2.weight"},
             {"layers.x.feed_forward.w1.weight", "layers.x.ffn.w1.weight"},
             {"layers.x.ffn_norm.weight", "layers.x.ffn.norm.weight"},
-            {"layers.x.attention_norm.weight",
-             "layers.x.attention.norm.weight"},
+            {"layers.x.attention_norm.weight", "layers.x.attention.norm.weight"},
     };
 }
 
 //! LlamaGraph
-void LlamaGraph::load(std::shared_ptr<InputFile> fin, LlmParams& param,
-                      std::shared_ptr<Vocab> vocab) {
+void LlamaGraph::load(
+        std::shared_ptr<InputFile> fin, LlmParams& param,
+        std::shared_ptr<Vocab> vocab) {
     // verify the magic number wrote when model convert
     uint32_t magic;
     uint32_t version = 0;
@@ -37,8 +37,7 @@ void LlamaGraph::load(std::shared_ptr<InputFile> fin, LlmParams& param,
         INFER_ASSERT(0, "unsupported model type.");
     }
 
-    INFER_LOG("model is %s , version = %d\n", magic != 'ggml' ? "new" : "old",
-              version);
+    INFER_LOG("model is %s , version = %d\n", magic != 'ggml' ? "new" : "old", version);
 
     // load param
     fin->read_raw((char*)&param.n_vocab, sizeof(param.n_vocab));
@@ -102,15 +101,16 @@ void LlamaGraph::load(std::shared_ptr<InputFile> fin, LlmParams& param,
         std::string name(length, 0);
         fin->read_raw(&name[0], length);
         auto alias_name = get_weight_alias(name);
-        INFER_ASSERT(m_weights_map.count(alias_name) == 1,
-                     "Error weight is not found when loading.");
+        INFER_ASSERT(
+                m_weights_map.count(alias_name) == 1,
+                "Error weight is not found when loading.");
         if (model_type >= LlamaModelType::LLAMA_FILE_VERSION_GGJT_V1) {
             // skip to the next multiple of 32 bytes
             fin->skip(-fin->tell() & 31);
         }
         auto weight = m_weights_map[alias_name];
-        INFER_ASSERT(weight->length() == nr_number,
-                     "Error length of weight is mismatch.");
+        INFER_ASSERT(
+                weight->length() == nr_number, "Error length of weight is mismatch.");
         weight->set_file(fin, fin->tell());
         weight->set_dtype(convert_dtype(ftype));
         fin->skip(weight->length_in_byte());
@@ -131,8 +131,8 @@ void LlamaGraph::constuct_llm() {
     m_input = std::make_shared<Tensor>(device(), name() + ":input");
     std::shared_ptr<Tensor> input = m_input;
     //! embd
-    input = add_module<EmbdModule>(this, input, embd, n_vocab, model_config(),
-                                   device(), "");
+    input = add_module<EmbdModule>(
+            this, input, embd, n_vocab, model_config(), device(), "");
 
     int nr_layer = m_param.n_layer;
     for (int i = 0; i < nr_layer; i++) {
@@ -140,25 +140,24 @@ void LlamaGraph::constuct_llm() {
         //! layer norm
         std::shared_ptr<Tensor> attention_input = input;
         auto norm_out_attention = add_one_opr_module<LayerNorm>(
-                                          this, OpIOs{attention_input},
-                                          device(), name + ".attention.norm")
+                                          this, OpIOs{attention_input}, device(),
+                                          name + ".attention.norm")
                                           ->add_opr(embd);
         //! attentin
         auto attention_output = add_module<AttentionModule<LlamaAttention>>(
                 this, norm_out_attention, embd, head, rot, ctx, model_config(),
                 device(), name + ".attention", i);
         //! add
-        auto add_output =
-                add_one_opr_module<Elemwise>(
-                        this, OpIOs{attention_input, attention_output},
-                        device(), name + ".attention_add")
-                        ->add_opr(ElemMode::Add);
+        auto add_output = add_one_opr_module<Elemwise>(
+                                  this, OpIOs{attention_input, attention_output},
+                                  device(), name + ".attention_add")
+                                  ->add_opr(ElemMode::Add);
 
         std::shared_ptr<Tensor> feed_forward_input = add_output;
         //! layer normal
         auto ffn_norm_out =
-                add_one_opr_module<LayerNorm>(this, OpIOs{feed_forward_input},
-                                              device(), name + ".ffn.norm")
+                add_one_opr_module<LayerNorm>(
+                        this, OpIOs{feed_forward_input}, device(), name + ".ffn.norm")
                         ->add_opr(embd);
         //! feed forward
         auto ffn_output = add_module<LlamaFFNModule>(
@@ -170,6 +169,6 @@ void LlamaGraph::constuct_llm() {
                         ->add_opr(ElemMode::Add);
     }
     //! the last layer
-    m_output = add_module<HeadModule>(this, input, embd, n_vocab,
-                                      model_config(), device(), "head");
+    m_output = add_module<HeadModule>(
+            this, input, embd, n_vocab, model_config(), device(), "head");
 }

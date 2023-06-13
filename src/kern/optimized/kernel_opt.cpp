@@ -1,7 +1,7 @@
+#include <assert.h>
 #include "math.h"
 #include "string.h"
 #include "utils.h"
-#include <assert.h>
 
 #include "core/tensor.h"
 #include "kern/optimized/kernel_opt.h"
@@ -20,14 +20,14 @@ using namespace inferllm;
 
 namespace inferllm {
 namespace opt {
-TaskSet llm_embedding_get_int4_float(const void* weights, const uint32_t* index,
-                                     float* dst, uint32_t len_seq,
-                                     uint32_t embd) {
+TaskSet llm_embedding_get_int4_float(
+        const void* weights, const uint32_t* index, float* dst, uint32_t len_seq,
+        uint32_t embd) {
     auto task = [=](const TaskId& id) {
         for (uint32_t i = id.start; i < id.end; ++i) {
             const int row = index[i];
-            const int weight_stride = embd * dtype_in_byte(DType::Int4) /
-                                      dtype_block_size(DType::Int4);
+            const int weight_stride =
+                    embd * dtype_in_byte(DType::Int4) / dtype_block_size(DType::Int4);
             dequantize_row_q4_0(
                     (static_cast<const char*>(weights) + row * weight_stride),
                     dst + i * embd, embd);
@@ -36,16 +36,16 @@ TaskSet llm_embedding_get_int4_float(const void* weights, const uint32_t* index,
     return TaskSet{{task, len_seq}};
 }
 
-TaskSet llm_elemwise_compute_float(InData<float> srcs, float* dst,
-                                   size_t length, ElemMode mode) {
+TaskSet llm_elemwise_compute_float(
+        InData<float> srcs, float* dst, size_t length, ElemMode mode) {
     MultiThreadingTask task;
     switch (mode) {
         case ElemMode::Add: {
             task = [=](const TaskId& id) {
                 uint32_t offset = id.start;
                 uint32_t len = id.end - id.start;
-                elemwise_vector_add(len, srcs[0] + offset, srcs[1] + offset,
-                                    dst + offset);
+                elemwise_vector_add(
+                        len, srcs[0] + offset, srcs[1] + offset, dst + offset);
             };
             break;
         }
@@ -53,8 +53,8 @@ TaskSet llm_elemwise_compute_float(InData<float> srcs, float* dst,
             task = [=](const TaskId& id) {
                 uint32_t offset = id.start;
                 uint32_t len = id.end - id.start;
-                elemwise_vector_mul(len, srcs[0] + offset, srcs[1] + offset,
-                                    dst + offset);
+                elemwise_vector_mul(
+                        len, srcs[0] + offset, srcs[1] + offset, dst + offset);
             };
             break;
         }
@@ -62,8 +62,7 @@ TaskSet llm_elemwise_compute_float(InData<float> srcs, float* dst,
             task = [=](const TaskId& id) {
                 uint32_t offset = id.start;
                 uint32_t len = id.end - id.start;
-                return elemwise_vector_silu(len, srcs[0] + offset,
-                                            dst + offset);
+                return elemwise_vector_silu(len, srcs[0] + offset, dst + offset);
             };
             break;
         }
@@ -71,8 +70,7 @@ TaskSet llm_elemwise_compute_float(InData<float> srcs, float* dst,
             task = [=](const TaskId& id) {
                 uint32_t offset = id.start;
                 uint32_t len = id.end - id.start;
-                return elemwise_vector_gelu(len, srcs[0] + offset,
-                                            dst + offset);
+                return elemwise_vector_gelu(len, srcs[0] + offset, dst + offset);
             };
             break;
         }
@@ -83,8 +81,8 @@ TaskSet llm_elemwise_compute_float(InData<float> srcs, float* dst,
 }
 
 TaskSet llm_elemwise_broadcast_dim0_src1_compute_float(
-        const float* src0, const float* src1, float* dst, uint32_t len0,
-        uint32_t len1, ElemMode mode) {
+        const float* src0, const float* src1, float* dst, uint32_t len0, uint32_t len1,
+        ElemMode mode) {
     MultiThreadingTask task;
     switch (mode) {
         case ElemMode::Add: {
@@ -113,8 +111,8 @@ TaskSet llm_elemwise_broadcast_dim0_src1_compute_float(
     return TaskSet{{task, len0}};
 }
 
-TaskSet llm_rms_norm_compute_float(const float* src, float* dst,
-                                   uint32_t seq_len, uint32_t embd) {
+TaskSet llm_rms_norm_compute_float(
+        const float* src, float* dst, uint32_t seq_len, uint32_t embd) {
     const float eps = 1e-5f;
     auto task = [=](const TaskId& id) {
         for (uint32_t i = id.start; i < id.end; i++) {
@@ -128,8 +126,8 @@ TaskSet llm_rms_norm_compute_float(const float* src, float* dst,
     return TaskSet{{task, seq_len}};
 }
 
-TaskSet llm_softmax_compute_float(const float* src, float* dst,
-                                  uint32_t len_row, uint32_t col) {
+TaskSet llm_softmax_compute_float(
+        const float* src, float* dst, uint32_t len_row, uint32_t col) {
     auto task = [=](const TaskId& id) {
         for (uint32_t row = id.start; row < id.end; row++) {
             const float* psrc = src + row * col;
@@ -145,10 +143,9 @@ TaskSet llm_softmax_compute_float(const float* src, float* dst,
 }
 
 // compute the softmax of the last dim of src, and store the result in dst
-TaskSet llm_matmul_compute_int4_float(float* dst, const void* src0,
-                                      const float* bias, const float* src1,
-                                      uint32_t M, uint32_t N, uint32_t K,
-                                      void* workspace, uint32_t size) {
+TaskSet llm_matmul_compute_int4_float(
+        float* dst, const void* src0, const float* bias, const float* src1, uint32_t M,
+        uint32_t N, uint32_t K, void* workspace, uint32_t size) {
     //! src0 is quantized weights, weights store in 32 data as block and a block
     //! share the same scale, src1 is featureMap. src0 layout is {N,
     //! K}, src1 layout is {M, K}, the dst is {M, N}
@@ -162,8 +159,8 @@ TaskSet llm_matmul_compute_int4_float(float* dst, const void* src0,
     //! reduce the memory traffic
     auto task1 = [=](const TaskId& id) {
         for (uint32_t m = id.start; m < id.end; m++) {
-            BlockQ80* q_src1 = (BlockQ80*)(static_cast<uint8_t*>(workspace) +
-                                           m * weight_q80_stride);
+            BlockQ80* q_src1 =
+                    (BlockQ80*)(static_cast<uint8_t*>(workspace) + m * weight_q80_stride);
             quantize_row_q8_0(src1 + m * K, q_src1, K);
         }
     };
@@ -215,16 +212,13 @@ TaskSet llm_matmul_compute_int4_float(float* dst, const void* src0,
     return TaskSet{{task1, M}, {task2, N}};
 }
 
-size_t llm_matmul_get_workspace_float(uint32_t, uint32_t M, uint32_t N,
-                                      uint32_t K) {
+size_t llm_matmul_get_workspace_float(uint32_t, uint32_t M, uint32_t N, uint32_t K) {
     return sizeof(float) * K * M;
 }
 
-TaskSet llm_matmul_compute_with_head_stride_float(float* dst, const float* srck,
-                                                  const float* srcq,
-                                                  uint32_t seqlen,
-                                                  uint32_t embd, uint32_t head,
-                                                  uint32_t nr_past) {
+TaskSet llm_matmul_compute_with_head_stride_float(
+        float* dst, const float* srck, const float* srcq, uint32_t seqlen,
+        uint32_t embd, uint32_t head, uint32_t nr_past) {
     uint32_t sub_embd = embd / head;
     uint32_t length = nr_past + seqlen;
     uint32_t line_stride = embd;
@@ -234,17 +228,17 @@ TaskSet llm_matmul_compute_with_head_stride_float(float* dst, const float* srck,
             auto dst_head = dst + h * seqlen * (nr_past + seqlen);
             auto srck_head = srck + h * sub_embd;
             auto srcq_head = srcq + h * sub_embd;
-            compute_src_offset_embd_matmul(srcq_head, embd, srck_head, embd,
-                                           dst_head, seqlen, length, sub_embd);
+            compute_src_offset_embd_matmul(
+                    srcq_head, embd, srck_head, embd, dst_head, seqlen, length,
+                    sub_embd);
         }
     };
     return TaskSet{{task, head}};
 }
 
-TaskSet llm_head_batched_matmul_compute_float(float* dst, const float* v,
-                                              const float* qk, uint32_t seqlen,
-                                              uint32_t embd, uint32_t head,
-                                              uint32_t nr_past) {
+TaskSet llm_head_batched_matmul_compute_float(
+        float* dst, const float* v, const float* qk, uint32_t seqlen, uint32_t embd,
+        uint32_t head, uint32_t nr_past) {
     uint32_t sub_embd = embd / head;
     uint32_t length = nr_past + seqlen;
     uint32_t line_stride = embd;
@@ -254,9 +248,8 @@ TaskSet llm_head_batched_matmul_compute_float(float* dst, const float* v,
             float* dst_head = dst + h * sub_embd;
             const float* v_head = v + h * sub_embd;
             const float* qk_head = qk + h * seqlen * length;
-            comput_matmul_with_dst_uncontinue(dst_head, embd, v_head, embd,
-                                              qk_head, seqlen, length,
-                                              sub_embd);
+            comput_matmul_with_dst_uncontinue(
+                    dst_head, embd, v_head, embd, qk_head, seqlen, length, sub_embd);
         }
     };
     return TaskSet{{task, head}};

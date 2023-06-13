@@ -9,8 +9,8 @@ void LayerNorm::execute(WorkSpace* workspace, uint32_t nr_past) {
     if (m_mul) {
         weight = weights()[0];
         DType weight_type = weight->dtype();
-        INFER_ASSERT(weight_type == DType::Float32,
-                     "layer norm weights must be float32.");
+        INFER_ASSERT(
+                weight_type == DType::Float32, "layer norm weights must be float32.");
     }
     if (m_bias) {
         bias = weights()[1];
@@ -56,8 +56,8 @@ void Embedding::execute(WorkSpace*, uint32_t) {
     if (output->dtype() == DType::Float32) {
         if (weight_type == DType::Int4) {
             kernel->operator()<KernelID::EmbeddingGetInt4Float>(
-                    weight->ptr(), input->ptr<uint32_t>(), output->ptr<float>(),
-                    len, m_embd);
+                    weight->ptr(), input->ptr<uint32_t>(), output->ptr<float>(), len,
+                    m_embd);
         } else if (weight_type == DType::Float32) {
             kernel->operator()<KernelID::EmbeddingGetFloatFloat>(
                     weight->ptr<float>(), input->ptr<uint32_t>(), output->ptr<float>(),
@@ -94,8 +94,7 @@ void Elemwise::execute(WorkSpace*, uint32_t) {
             }
             float* dst = output->ptr<float>();
             size_t len = output->length();
-            kernel->operator()<KernelID::ElemwiseFloat>(in_datas, dst, len,
-                                                        m_mode);
+            kernel->operator()<KernelID::ElemwiseFloat>(in_datas, dst, len, m_mode);
         } else {
             float* dst = output->ptr<float>();
             size_t len = output->length();
@@ -107,8 +106,7 @@ void Elemwise::execute(WorkSpace*, uint32_t) {
                 in_datas.push_back(input->ptr<float>());
             }
             in_datas[0] = dst;
-            kernel->operator()<KernelID::ElemwiseFloat>(in_datas, dst, len,
-                                                        m_mode);
+            kernel->operator()<KernelID::ElemwiseFloat>(in_datas, dst, len, m_mode);
         }
     } else {
         //! fp16
@@ -210,8 +208,9 @@ size_t MatMulLast::get_workspace_in_byte() {
 }
 
 void LlamaAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
-    INFER_ASSERT(nr_past == m_kstorage->current_index(),
-                 "The index in kv storage is not the same as input\n");
+    INFER_ASSERT(
+            nr_past == m_kstorage->current_index(),
+            "The index in kv storage is not the same as input\n");
     auto w_dtype = weights()[0]->dtype();
     auto out = outputs()[0];
     auto input = inputs()[0];
@@ -224,8 +223,8 @@ void LlamaAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
     void *p_wq = nullptr, *p_wk = nullptr, *p_wv = nullptr;
     float *p_bq = nullptr, *p_bk = nullptr, *p_bv = nullptr;
     if (m_fused_weights) {
-        size_t offset = embd * embd * dtype_in_byte(w_dtype) /
-                        dtype_block_size(w_dtype);
+        size_t offset =
+                embd * embd * dtype_in_byte(w_dtype) / dtype_block_size(w_dtype);
         p_wq = weights()[0]->ptr();
         p_wk = static_cast<int8_t*>(p_wq) + offset;
         p_wv = static_cast<int8_t*>(p_wk) + offset;
@@ -251,8 +250,8 @@ void LlamaAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
     uint32_t size = workspace->length();
 
     void* q_out = static_cast<void*>(static_cast<char*>(p_work) + matmul_size);
-    void* qk_out = static_cast<void*>(static_cast<char*>(q_out) +
-                                      seqlen * m_embd * sizeof(float));
+    void* qk_out = static_cast<void*>(
+            static_cast<char*>(q_out) + seqlen * m_embd * sizeof(float));
 
     if (in_dtype == DType::Float32) {
         //! compute k, q, v
@@ -261,25 +260,22 @@ void LlamaAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
         float* p_outv = static_cast<float*>(m_vstorage->get_current_data());
         float* p_outq = static_cast<float*>(q_out);
         if (w_dtype == DType::Int4) {
-            kernel->operator()<KernelID::MatmulInt4Float>(p_outq, p_wq, p_bq,
-                                                          pdata, seqlen, embd,
-                                                          embd, p_work, size);
-            kernel->operator()<KernelID::MatmulInt4Float>(p_outk, p_wk, p_bk,
-                                                          pdata, seqlen, embd,
-                                                          embd, p_work, size);
-            kernel->operator()<KernelID::MatmulInt4Float>(p_outv, p_wv, p_bv,
-                                                          pdata, seqlen, embd,
-                                                          embd, p_work, size);
+            kernel->operator()<KernelID::MatmulInt4Float>(
+                    p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work, size);
+            kernel->operator()<KernelID::MatmulInt4Float>(
+                    p_outk, p_wk, p_bk, pdata, seqlen, embd, embd, p_work, size);
+            kernel->operator()<KernelID::MatmulInt4Float>(
+                    p_outv, p_wv, p_bv, pdata, seqlen, embd, embd, p_work, size);
         }
         //! rope Q
-        kernel->operator()<KernelID::RopeFloat>(p_outq, p_outq, nr_past, m_rot,
-                                                RotMode::Mode0, seqlen, head,
-                                                embd / head);
+        kernel->operator()<KernelID::RopeFloat>(
+                p_outq, p_outq, nr_past, m_rot, RotMode::Mode0, seqlen, head,
+                embd / head);
         //! rope K
         float* p_totalk = static_cast<float*>(m_kstorage->ptr());
         kernel->operator()<KernelID::RopeFloat>(
-                p_totalk, p_totalk, nr_past, m_rot, RotMode::Mode1,
-                seqlen + nr_past, head, embd / head);
+                p_totalk, p_totalk, nr_past, m_rot, RotMode::Mode1, seqlen + nr_past,
+                head, embd / head);
         //! Q*k with transpose
         kernel->operator()<KernelID::MatmulWithHeadStrideFloat>(
                 (float*)qk_out, p_totalk, p_outq, seqlen, embd, head, nr_past);
@@ -289,8 +285,7 @@ void LlamaAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
                 (float*)qk_out, (float*)qk_out, scale, nr_past, seqlen, head);
         //! softmax
         kernel->operator()<KernelID::SoftmaxFloat>(
-                (float*)qk_out, (float*)qk_out, head * seqlen,
-                nr_past + seqlen);
+                (float*)qk_out, (float*)qk_out, head * seqlen, nr_past + seqlen);
         //! compute v_out
         float* out = outputs()[0]->ptr<float>();
         float* p_totalv = static_cast<float*>(m_vstorage->ptr());
@@ -325,9 +320,9 @@ size_t LlamaAttention::get_workspace_in_byte() {
 }
 
 void GlmAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
-
-    INFER_ASSERT(nr_past == m_kstorage->current_index(),
-                 "The index in kv storage is not the same as input\n");
+    INFER_ASSERT(
+            nr_past == m_kstorage->current_index(),
+            "The index in kv storage is not the same as input\n");
     auto w_dtype = weights()[0]->dtype();
     auto out = outputs()[0];
     auto input = inputs()[0];
@@ -337,16 +332,16 @@ void GlmAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
     uint32_t head = m_head;
     auto kernel = get_kernel();
     if (nr_past == 0) {
-        INFER_ASSERT(seqlen > 2,
-                     "seqlen is too short, must end with gmask and end token");
+        INFER_ASSERT(
+                seqlen > 2, "seqlen is too short, must end with gmask and end token");
         m_gmask_position = seqlen - 2;
     }
 
     void *p_wq = nullptr, *p_wk = nullptr, *p_wv = nullptr;
     float *p_bq = nullptr, *p_bk = nullptr, *p_bv = nullptr;
     if (m_fused_weights) {
-        size_t offset = embd * embd * dtype_in_byte(w_dtype) /
-                        dtype_block_size(w_dtype);
+        size_t offset =
+                embd * embd * dtype_in_byte(w_dtype) / dtype_block_size(w_dtype);
         p_wq = weights()[0]->ptr();
         p_wk = static_cast<int8_t*>(p_wq) + offset;
         p_wv = static_cast<int8_t*>(p_wk) + offset;
@@ -380,8 +375,8 @@ void GlmAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
     uint32_t size = workspace->length();
 
     void* q_out = static_cast<void*>(static_cast<char*>(p_work) + matmul_size);
-    void* qk_out = static_cast<void*>(static_cast<char*>(q_out) +
-                                      seqlen * m_embd * sizeof(float));
+    void* qk_out = static_cast<void*>(
+            static_cast<char*>(q_out) + seqlen * m_embd * sizeof(float));
 
     if (in_dtype == DType::Float32) {
         //! compute k, q, v
@@ -390,55 +385,49 @@ void GlmAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
         float* p_outv = static_cast<float*>(m_vstorage->get_current_data());
         float* p_outq = static_cast<float*>(q_out);
         if (w_dtype == DType::Int4) {
-            kernel->operator()<KernelID::MatmulInt4Float>(p_outq, p_wq, p_bq,
-                                                          pdata, seqlen, embd,
-                                                          embd, p_work, size);
-            kernel->operator()<KernelID::MatmulInt4Float>(p_outk, p_wk, p_bk,
-                                                          pdata, seqlen, embd,
-                                                          embd, p_work, size);
-            kernel->operator()<KernelID::MatmulInt4Float>(p_outv, p_wv, p_bv,
-                                                          pdata, seqlen, embd,
-                                                          embd, p_work, size);
+            kernel->operator()<KernelID::MatmulInt4Float>(
+                    p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work, size);
+            kernel->operator()<KernelID::MatmulInt4Float>(
+                    p_outk, p_wk, p_bk, pdata, seqlen, embd, embd, p_work, size);
+            kernel->operator()<KernelID::MatmulInt4Float>(
+                    p_outv, p_wv, p_bv, pdata, seqlen, embd, embd, p_work, size);
         } else if (w_dtype == DType::Float32) {
             kernel->operator()<KernelID::MatmulFloatFloat>(
-                    p_outq, (float*)p_wq, p_bq, pdata, seqlen, embd, embd,
-                    p_work, size);
+                    p_outq, (float*)p_wq, p_bq, pdata, seqlen, embd, embd, p_work,
+                    size);
             kernel->operator()<KernelID::MatmulFloatFloat>(
-                    p_outk, (float*)p_wk, p_bk, pdata, seqlen, embd, embd,
-                    p_work, size);
+                    p_outk, (float*)p_wk, p_bk, pdata, seqlen, embd, embd, p_work,
+                    size);
             kernel->operator()<KernelID::MatmulFloatFloat>(
-                    p_outv, (float*)p_wv, p_bv, pdata, seqlen, embd, embd,
-                    p_work, size);
+                    p_outv, (float*)p_wv, p_bv, pdata, seqlen, embd, embd, p_work,
+                    size);
         }
         //! rope Q
-        kernel->operator()<KernelID::GlmRopeFloat>(p_outq, p_outq, nr_past,
-                                                   m_gmask_position, seqlen,
-                                                   head, embd / head);
+        kernel->operator()<KernelID::GlmRopeFloat>(
+                p_outq, p_outq, nr_past, m_gmask_position, seqlen, head, embd / head);
         //! scale Q
         float scale_q = 1 / ((m_layer_id + 1) * sqrt(embd / head));
         kernel->operator()<KernelID::ElemwiseFloatScale>(
                 p_outq, p_outq, seqlen * embd, scale_q);
         //! rope K
         float* p_totalk = static_cast<float*>(m_kstorage->ptr());
-        kernel->operator()<KernelID::GlmRopeFloat>(p_outk, p_outk, nr_past,
-                                                   m_gmask_position, seqlen,
-                                                   head, embd / head);
+        kernel->operator()<KernelID::GlmRopeFloat>(
+                p_outk, p_outk, nr_past, m_gmask_position, seqlen, head, embd / head);
         //! Q*k with transpose
         kernel->operator()<KernelID::MatmulWithHeadStrideFloat>(
                 (float*)qk_out, p_totalk, p_outq, seqlen, embd, head, nr_past);
         //! qk * (layer + 1)
         kernel->operator()<KernelID::ElemwiseFloatScale>(
-                (float*)qk_out, (float*)qk_out,
-                head * seqlen * (nr_past + seqlen), (m_layer_id + 1));
+                (float*)qk_out, (float*)qk_out, head * seqlen * (nr_past + seqlen),
+                (m_layer_id + 1));
         if (seqlen > 1) {
             //! configure the gMask
-            kernel->operator()<KernelID::GlmGmask>((float*)qk_out, nr_past,
-                                                   seqlen, head);
+            kernel->operator()<KernelID::GlmGmask>(
+                    (float*)qk_out, nr_past, seqlen, head);
         }
         //! softmax
         kernel->operator()<KernelID::SoftmaxFloat>(
-                (float*)qk_out, (float*)qk_out, head * seqlen,
-                nr_past + seqlen);
+                (float*)qk_out, (float*)qk_out, head * seqlen, nr_past + seqlen);
         //! compute v_out
         float* out = outputs()[0]->ptr<float>();
         float* p_totalv = static_cast<float*>(m_vstorage->ptr());
@@ -490,8 +479,7 @@ void DiagMask::execute(WorkSpace*, uint32_t n_past) {
     if (output->dtype() == DType::Float32) {
         const float* in_data = inputs()[0]->ptr<float>();
         float* dst = output->ptr<float>();
-        kernel->operator()<KernelID::DiagMaskFloat>(dst, in_data, n_past, N,
-                                                    head);
+        kernel->operator()<KernelID::DiagMaskFloat>(dst, in_data, n_past, N, head);
     } else {
         //! fp16
     }

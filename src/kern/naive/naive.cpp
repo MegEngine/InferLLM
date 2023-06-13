@@ -1,21 +1,21 @@
+#include <assert.h>
 #include "core/tensor.h"
 #include "kern/kernel.h"
 #include "math.h"
 #include "string.h"
 #include "utils.h"
-#include <assert.h>
 
 namespace inferllm {
 namespace naive {
 
-TaskSet llm_embedding_get_int4_float(const void* weights, const uint32_t* index,
-                                     float* dst, uint32_t len_seq,
-                                     uint32_t embd) {
+TaskSet llm_embedding_get_int4_float(
+        const void* weights, const uint32_t* index, float* dst, uint32_t len_seq,
+        uint32_t embd) {
     auto task = [=](const TaskId& id) {
         for (uint32_t i = id.start; i < id.end; ++i) {
             const int row = index[i];
-            const int weight_stride = embd * dtype_in_byte(DType::Int4) /
-                                      dtype_block_size(DType::Int4);
+            const int weight_stride =
+                    embd * dtype_in_byte(DType::Int4) / dtype_block_size(DType::Int4);
             dequantize_row_q4_0_reference(
                     (static_cast<const char*>(weights) + row * weight_stride),
                     dst + i * embd, embd);
@@ -24,22 +24,21 @@ TaskSet llm_embedding_get_int4_float(const void* weights, const uint32_t* index,
     return TaskSet{{task, len_seq}};
 }
 
-TaskSet llm_embedding_get_float_float(const float* weights,
-                                      const uint32_t* index, float* dst,
-                                      uint32_t len_seq, uint32_t embd) {
+TaskSet llm_embedding_get_float_float(
+        const float* weights, const uint32_t* index, float* dst, uint32_t len_seq,
+        uint32_t embd) {
     auto task = [=](const TaskId& id) {
         for (uint32_t i = id.start; i < id.end; ++i) {
             const int row = index[i];
             const int weight_stride = embd;
-            memcpy(dst + i * embd, weights + row * weight_stride,
-                   embd * sizeof(float));
+            memcpy(dst + i * embd, weights + row * weight_stride, embd * sizeof(float));
         }
     };
     return TaskSet{{task, len_seq}};
 }
 
-TaskSet llm_elemwise_compute_float(InData<float> srcs, float* dst, size_t len,
-                                ElemMode mode) {
+TaskSet llm_elemwise_compute_float(
+        InData<float> srcs, float* dst, size_t len, ElemMode mode) {
     MultiThreadingTask task;
     switch (mode) {
         case ElemMode::Add: {
@@ -79,8 +78,8 @@ TaskSet llm_elemwise_compute_float(InData<float> srcs, float* dst, size_t len,
                 for (size_t i = id.start; i < id.end; i++) {
                     float src = src0[i];
                     dst[i] = 0.5 * src *
-                             (1 + tanh(sqrt(2.0 / PI) *
-                                       (src + PGELU * src * src * src)));
+                             (1 +
+                              tanh(sqrt(2.0 / PI) * (src + PGELU * src * src * src)));
                 }
                 return;
             };
@@ -92,8 +91,8 @@ TaskSet llm_elemwise_compute_float(InData<float> srcs, float* dst, size_t len,
     return TaskSet{{task, len}};
 }
 
-TaskSet llm_elemwise_compute_float_scale(float* src, float* dst, size_t len,
-                                         float scale) {
+TaskSet llm_elemwise_compute_float_scale(
+        float* src, float* dst, size_t len, float scale) {
     MultiThreadingTask task;
     task = [=](const TaskId& id) {
         for (size_t i = id.start; i < id.end; i++) {
@@ -104,8 +103,8 @@ TaskSet llm_elemwise_compute_float_scale(float* src, float* dst, size_t len,
 }
 
 TaskSet llm_elemwise_broadcast_dim0_src1_compute_float(
-        const float* src0, const float* src1, float* dst, uint32_t len0,
-        uint32_t len1, ElemMode mode) {
+        const float* src0, const float* src1, float* dst, uint32_t len0, uint32_t len1,
+        ElemMode mode) {
     MultiThreadingTask task;
     switch (mode) {
         case ElemMode::Add: {
@@ -138,8 +137,8 @@ TaskSet llm_elemwise_broadcast_dim0_src1_compute_float(
     return TaskSet{{task, len0}};
 }
 
-TaskSet llm_norm_compute_float(const float* src, float* dst, uint32_t seq_len,
-                               uint32_t embd) {
+TaskSet llm_norm_compute_float(
+        const float* src, float* dst, uint32_t seq_len, uint32_t embd) {
     const float eps = 1e-5f;
     auto task = [=](const TaskId& id) {
         for (uint32_t i = id.start; i < id.end; i++) {
@@ -169,8 +168,8 @@ TaskSet llm_norm_compute_float(const float* src, float* dst, uint32_t seq_len,
     return TaskSet{{task, seq_len}};
 }
 
-TaskSet llm_rms_norm_compute_float(const float* src, float* dst,
-                                   uint32_t seq_len, uint32_t embd) {
+TaskSet llm_rms_norm_compute_float(
+        const float* src, float* dst, uint32_t seq_len, uint32_t embd) {
     const float eps = 1e-5f;
     auto task = [=](const TaskId& id) {
         for (uint32_t i = id.start; i < id.end; i++) {
@@ -193,8 +192,8 @@ TaskSet llm_rms_norm_compute_float(const float* src, float* dst,
     return TaskSet{{task, seq_len}};
 }
 
-TaskSet llm_softmax_compute_float(const float* src, float* dst,
-                                  uint32_t len_row, uint32_t col) {
+TaskSet llm_softmax_compute_float(
+        const float* src, float* dst, uint32_t len_row, uint32_t col) {
     auto task = [=](const TaskId& id) {
         for (uint32_t row = id.start; row < id.end; row++) {
             const float* psrc = src + row * col;
@@ -227,10 +226,9 @@ TaskSet llm_softmax_compute_float(const float* src, float* dst,
 }
 
 // compute the softmax of the last dim of src, and store the result in dst
-TaskSet llm_matmul_compute_int4_float(float* dst, const void* src0,
-                                      const float* bias, const float* src1,
-                                      uint32_t M, uint32_t N, uint32_t K,
-                                      void* workspace, uint32_t size) {
+TaskSet llm_matmul_compute_int4_float(
+        float* dst, const void* src0, const float* bias, const float* src1, uint32_t M,
+        uint32_t N, uint32_t K, void* workspace, uint32_t size) {
     //! src0 is quantized weights, weights store in 32 data as block and a block
     //! share the same scale, src1 is featureMap. src0 layout is {N,
     //! K}, src1 layout is {M, K}, the dst is {M, N}
@@ -244,8 +242,8 @@ TaskSet llm_matmul_compute_int4_float(float* dst, const void* src0,
     //! reduce the memory traffic
     auto task1 = [=](const TaskId& id) {
         for (uint32_t m = id.start; m < id.end; m++) {
-            BlockQ80* q_src1 = (BlockQ80*)(static_cast<uint8_t*>(workspace) +
-                                           m * weight_q80_stride);
+            BlockQ80* q_src1 =
+                    (BlockQ80*)(static_cast<uint8_t*>(workspace) + m * weight_q80_stride);
             quantize_row_q8_0_reference(src1 + m * K, q_src1, K);
         }
     };
@@ -258,29 +256,27 @@ TaskSet llm_matmul_compute_int4_float(float* dst, const void* src0,
             for (uint32_t m = 0; m < M; m++) {
                 int8_t* src = q_src + m * weight_q80_stride;
                 dst[m * N + n] =
-                        vec_vec_dot_q40_with_q80_reference(K, q_weight, src) +
-                        b;
+                        vec_vec_dot_q40_with_q80_reference(K, q_weight, src) + b;
             }
         }
     };
     return TaskSet{{task1, M}, {task2, N}};
 }
 
-size_t llm_matmul_get_workspace_float(uint32_t nr_thread, uint32_t M,
-                                      uint32_t N, uint32_t K) {
+size_t llm_matmul_get_workspace_float(
+        uint32_t nr_thread, uint32_t M, uint32_t N, uint32_t K) {
     return M * K * dtype_in_byte(DType::Int8) / dtype_block_size(DType::Int8);
 }
 
-size_t llm_matmul_get_workspace_float_float(uint32_t nr_thread, uint32_t M,
-                                            uint32_t N, uint32_t K) {
+size_t llm_matmul_get_workspace_float_float(
+        uint32_t nr_thread, uint32_t M, uint32_t N, uint32_t K) {
     return 0;
 }
 
 // compute the softmax of the last dim of src, and store the result in dst
-TaskSet llm_matmul_compute_float_float(float* dst, const float* src0,
-                                       const float* bias, const float* src1,
-                                       uint32_t M, uint32_t N, uint32_t K,
-                                       void* workspace, uint32_t size) {
+TaskSet llm_matmul_compute_float_float(
+        float* dst, const float* src0, const float* bias, const float* src1, uint32_t M,
+        uint32_t N, uint32_t K, void* workspace, uint32_t size) {
     const float* src = src1;
     auto task = [=](const TaskId& id) {
         for (uint32_t n = id.start; n < id.end; n++) {
@@ -288,18 +284,17 @@ TaskSet llm_matmul_compute_float_float(float* dst, const float* src0,
             float b = bias ? bias[n] : 0.0f;
             for (uint32_t m = 0; m < M; m++) {
                 const float* p_src = src + m * K;
-                dst[m * N + n] = vec_vec_dot_float_with_float_reference(
-                                         K, weight, p_src) +
-                                 b;
+                dst[m * N + n] =
+                        vec_vec_dot_float_with_float_reference(K, weight, p_src) + b;
             }
         }
     };
     return TaskSet{{task, N}};
 }
 
-TaskSet llm_rope_compute_float(float* dst, const float* src0, uint32_t n_past,
-                               uint32_t n_rot, RotMode m, uint32_t N,
-                               uint32_t head, uint32_t embd) {
+TaskSet llm_rope_compute_float(
+        float* dst, const float* src0, uint32_t n_past, uint32_t n_rot, RotMode m,
+        uint32_t N, uint32_t head, uint32_t embd) {
     int ne2 = N;
     int ne1 = head;
     int ne0 = embd;
@@ -316,8 +311,7 @@ TaskSet llm_rope_compute_float(float* dst, const float* src0, uint32_t n_past,
                     const double cos_theta = cos(p * theta);
                     const double sin_theta = sin(p * theta);
 
-                    const float* const src =
-                            src0 + i2 * head * embd + i1 * embd + i0;
+                    const float* const src = src0 + i2 * head * embd + i1 * embd + i0;
                     float* dst_data = dst + i2 * head * embd + i1 * embd + i0;
 
                     double x0 = src[0];
@@ -332,10 +326,9 @@ TaskSet llm_rope_compute_float(float* dst, const float* src0, uint32_t n_past,
     return TaskSet{{task, ne1}};
 }
 
-TaskSet llm_glm_rope_compute_float(float* dst, const float* src0,
-                                   uint32_t n_past, uint32_t gmask_positon,
-                                   uint32_t seqlen, uint32_t head,
-                                   uint32_t embd) {
+TaskSet llm_glm_rope_compute_float(
+        float* dst, const float* src0, uint32_t n_past, uint32_t gmask_positon,
+        uint32_t seqlen, uint32_t head, uint32_t embd) {
     bool prefill = false;
     if (n_past == 0) {
         prefill = true;
@@ -349,8 +342,7 @@ TaskSet llm_glm_rope_compute_float(float* dst, const float* src0,
                 int block_position_id =
                         std::max((int)(n_past + seq) - (int)gmask_positon, 0);
                 for (int p = 0; p < quart_embd; p++) {
-                    const double theta =
-                            pow(10000.0, ((double)-2 * p) / (half_embd));
+                    const double theta = pow(10000.0, ((double)-2 * p) / (half_embd));
                     const double cos_theta = cos(position_id * theta);
                     const double sin_theta = sin(position_id * theta);
 
@@ -361,8 +353,7 @@ TaskSet llm_glm_rope_compute_float(float* dst, const float* src0,
                     {
                         const float* const src =
                                 src0 + seq * head * embd + h * embd + p;
-                        float* dst_data =
-                                dst + seq * head * embd + h * embd + p;
+                        float* dst_data = dst + seq * head * embd + h * embd + p;
                         double x0 = src[0];
                         double x32 = src[quart_embd];
                         dst_data[0] = x0 * cos_theta - x32 * sin_theta;
@@ -370,10 +361,10 @@ TaskSet llm_glm_rope_compute_float(float* dst, const float* src0,
                     }
                     //! second half
                     {
-                        const float* const src = src0 + seq * head * embd +
-                                                 h * embd + half_embd + p;
-                        float* dst_data = dst + seq * head * embd + h * embd +
-                                          half_embd + p;
+                        const float* const src =
+                                src0 + seq * head * embd + h * embd + half_embd + p;
+                        float* dst_data =
+                                dst + seq * head * embd + h * embd + half_embd + p;
                         double x0 = src[0];
                         double x32 = src[quart_embd];
                         dst_data[0] = x0 * cos_theta_b - x32 * sin_theta_b;
@@ -386,8 +377,8 @@ TaskSet llm_glm_rope_compute_float(float* dst, const float* src0,
     return TaskSet{{task, head}};
 }
 
-TaskSet llm_diag_mask_inf_float(float* dst, const float* src0, uint32_t n_past,
-                                uint32_t N, uint32_t head) {
+TaskSet llm_diag_mask_inf_float(
+        float* dst, const float* src0, uint32_t n_past, uint32_t N, uint32_t head) {
     const int nc = n_past + N;
     const int nr = N;
     const int nz = head;
@@ -406,8 +397,8 @@ TaskSet llm_diag_mask_inf_float(float* dst, const float* src0, uint32_t n_past,
     return TaskSet{{task, nz}};
 }
 
-TaskSet llm_glm_gmask_inf_float(float* dst, uint32_t n_past, uint32_t seqlen,
-                                uint32_t head) {
+TaskSet llm_glm_gmask_inf_float(
+        float* dst, uint32_t n_past, uint32_t seqlen, uint32_t head) {
     //! set every head the last number of data to -inf of every row expect
     //! the
     //! last row
@@ -422,9 +413,9 @@ TaskSet llm_glm_gmask_inf_float(float* dst, uint32_t n_past, uint32_t seqlen,
     return TaskSet{{task, head}};
 }
 
-TaskSet llm_scale_diag_mask_inf_float(float* dst, const float* src0,
-                                      float scale, uint32_t n_past,
-                                      uint32_t seqlen, uint32_t head) {
+TaskSet llm_scale_diag_mask_inf_float(
+        float* dst, const float* src0, float scale, uint32_t n_past, uint32_t seqlen,
+        uint32_t head) {
     const int nc = n_past + seqlen;
     const int nr = seqlen;
     const int nz = head;
@@ -446,9 +437,9 @@ TaskSet llm_scale_diag_mask_inf_float(float* dst, const float* src0,
     return TaskSet{{task, nz}};
 }
 
-TaskSet llm_permute_compute_float(float* dst, const float* src0, uint32_t dim0,
-                                  uint32_t dim1, uint32_t dim2,
-                                  std::vector<uint32_t> param) {
+TaskSet llm_permute_compute_float(
+        float* dst, const float* src0, uint32_t dim0, uint32_t dim1, uint32_t dim2,
+        std::vector<uint32_t> param) {
     uint32_t axis0 = param[0];
     uint32_t axis1 = param[1];
     uint32_t axis2 = param[2];
@@ -467,11 +458,9 @@ TaskSet llm_permute_compute_float(float* dst, const float* src0, uint32_t dim0,
     return TaskSet{{task, 1}};
 }
 
-TaskSet llm_matmul_compute_with_head_stride_float(float* dst, const float* srck,
-                                                  const float* srcq,
-                                                  uint32_t seqlen,
-                                                  uint32_t embd, uint32_t head,
-                                                  uint32_t nr_past) {
+TaskSet llm_matmul_compute_with_head_stride_float(
+        float* dst, const float* srck, const float* srcq, uint32_t seqlen,
+        uint32_t embd, uint32_t head, uint32_t nr_past) {
     uint32_t sub_embd = embd / head;
     uint32_t length = nr_past + seqlen;
     uint32_t line_stride = embd;
@@ -497,10 +486,9 @@ TaskSet llm_matmul_compute_with_head_stride_float(float* dst, const float* srck,
     return TaskSet{{task, head}};
 }
 
-TaskSet llm_head_batched_matmul_compute_float(float* dst, const float* v,
-                                              const float* qk, uint32_t seqlen,
-                                              uint32_t embd, uint32_t head,
-                                              uint32_t nr_past) {
+TaskSet llm_head_batched_matmul_compute_float(
+        float* dst, const float* v, const float* qk, uint32_t seqlen, uint32_t embd,
+        uint32_t head, uint32_t nr_past) {
     uint32_t sub_embd = embd / head;
     uint32_t length = nr_past + seqlen;
     uint32_t line_stride = embd;

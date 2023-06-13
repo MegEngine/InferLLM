@@ -7,8 +7,8 @@
 namespace inferllm {
 namespace naive {
 
-inline void dequantize_row_q4_0_reference(const void* __restrict x,
-                                          float* __restrict y, int k) {
+inline void dequantize_row_q4_0_reference(
+        const void* __restrict x, float* __restrict y, int k) {
     const int nb = k / QK40;
     const size_t bs = sizeof(float) + QK40 / 2;
 
@@ -101,8 +101,8 @@ inline void quantize_row_q8_0_reference(const float* x, BlockQ80* y, int k) {
     }
 }
 
-inline float vec_vec_dot_q40_with_q80_reference(const int n, const void* vx,
-                                                const void* vy) {
+inline float vec_vec_dot_q40_with_q80_reference(
+        const int n, const void* vx, const void* vy) {
     const int nb = n / QK80;
     assert(n % QK80 == 0);
     assert(nb % 2 == 0);
@@ -135,8 +135,8 @@ inline float vec_vec_dot_q40_with_q80_reference(const int n, const void* vx,
     return sumf;
 }
 
-inline float vec_vec_dot_float_with_float_reference(const int n, const float* x,
-                                                    const float* y) {
+inline float vec_vec_dot_float_with_float_reference(
+        const int n, const float* x, const float* y) {
     float sumf = 0.0;
     for (int i = 0; i < n; i++) {
         sumf += x[i] * y[i];

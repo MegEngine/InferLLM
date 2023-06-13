@@ -2,14 +2,14 @@
 #include <fstream>
 #include <vector>
 
-#include "model_imp.h"
-#include "graph.h"
-#include "utils.h"
 #include "file.h"
+#include "graph.h"
+#include "model_imp.h"
+#include "utils.h"
 
 using namespace inferllm;
 
-void ModelImp::load(const std::string& model_path){
+void ModelImp::load(const std::string& model_path) {
     m_vocab = std::make_shared<Vocab>();
     std::shared_ptr<InputFile> fin =
             std::make_shared<InputFile>(model_path, m_config.enable_mmap);
@@ -37,7 +37,7 @@ void ModelImp::prefill(const std::string& promote) {
 std::string ModelImp::decode(const std::string& user_input, int& token) {
     auto tokens = tokenize(user_input, false);
     m_graph->post_tokenize(tokens);
-    for(auto token : tokens) {
+    for (auto token : tokens) {
         m_last_queue.push_back(token);
         m_last_queue.pop_front();
     }
@@ -65,9 +65,9 @@ std::string ModelImp::decode_iter(int& token) {
 
 int32_t ModelImp::sample_and_update() {
     // sample the next token
-    auto token = llama_sample_top_p_top_k(*m_vocab, m_logist.data(),
-                                          m_last_queue, m_repeat_penalty,
-                                          m_top_k, m_top_p, m_temp, m_rng);
+    auto token = llama_sample_top_p_top_k(
+            *m_vocab, m_logist.data(), m_last_queue, m_repeat_penalty, m_top_k, m_top_p,
+            m_temp, m_rng);
     // update the last queue
     m_last_queue.push_back(token);
     m_last_queue.pop_front();
@@ -79,8 +79,7 @@ int32_t ModelImp::sample_and_update() {
 }
 
 #define MAX_TOKEN_LEN 18
-std::vector<Vocab::Id> ModelImp::tokenize(const std::string& text,
-                                              bool bos) {
+std::vector<Vocab::Id> ModelImp::tokenize(const std::string& text, bool bos) {
     std::vector<Vocab::Id> res;
     std::vector<int> score;
     std::vector<Vocab::Id> prev;

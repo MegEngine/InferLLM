@@ -1,8 +1,8 @@
 #pragma once
 
 #include "device.h"
-#include "utils.h"
 #include "file.h"
+#include "utils.h"
 namespace inferllm {
 
 enum class DType {
@@ -37,8 +37,7 @@ class OpBase;
 //! 3. the tensor memory is map from file, such as the weight tensor
 class Tensor {
 public:
-    Tensor(Device* device, std::string name)
-            : m_device(device), m_name(name) {
+    Tensor(Device* device, std::string name) : m_device(device), m_name(name) {
         m_state = TensorState::OutSide;
     }
 
@@ -65,8 +64,7 @@ public:
         m_stride.resize(m_dims);
         m_stride[m_dims - 1] = 1;
         for (uint32_t i = 1; i < m_dims; i++) {
-            m_stride[m_dims - 1 - i] =
-                    m_stride[m_dims - i] * m_shape[m_dims - i];
+            m_stride[m_dims - 1 - i] = m_stride[m_dims - i] * m_shape[m_dims - i];
         }
         m_length = m_shape[0] * m_stride[0];
     }
@@ -98,15 +96,13 @@ public:
     };
 
     void* ptr() {
-        INFER_ASSERT(is_own(),
-                     "Tensor is OutSide the device, can't get the memory.");
+        INFER_ASSERT(is_own(), "Tensor is OutSide the device, can't get the memory.");
         return m_data;
     };
 
     template <typename T>
     T* ptr() {
-        INFER_ASSERT(is_own(),
-                     "Tensor is OutSide the device, can't get the memory.");
+        INFER_ASSERT(is_own(), "Tensor is OutSide the device, can't get the memory.");
         return static_cast<T*>(m_data);
     };
 

@@ -10,8 +10,7 @@
 namespace inferllm {
 namespace opt {
 
-inline void quantize_row_q4_0(const float* __restrict x, void* __restrict vy,
-                              int k) {
+inline void quantize_row_q4_0(const float* __restrict x, void* __restrict vy, int k) {
     const int nb = k / QK40;
 
     BlockQ40* __restrict y = static_cast<BlockQ40*>(vy);
@@ -44,16 +43,13 @@ inline void quantize_row_q4_0(const float* __restrict x, void* __restrict vy,
             const float32x4_t vf = vaddq_f32(v, vdupq_n_f32(8.5f));
             const int32x4_t vi = vcvtq_s32_f32(vf);
 
-            y[i].qs[2 * l + 0] =
-                    vgetq_lane_s32(vi, 0) | (vgetq_lane_s32(vi, 1) << 4);
-            y[i].qs[2 * l + 1] =
-                    vgetq_lane_s32(vi, 2) | (vgetq_lane_s32(vi, 3) << 4);
+            y[i].qs[2 * l + 0] = vgetq_lane_s32(vi, 0) | (vgetq_lane_s32(vi, 1) << 4);
+            y[i].qs[2 * l + 1] = vgetq_lane_s32(vi, 2) | (vgetq_lane_s32(vi, 3) << 4);
         }
     }
 }
 
-inline void dequantize_row_q4_0(const void* __restrict vx, float* __restrict y,
-                                int k) {
+inline void dequantize_row_q4_0(const void* __restrict vx, float* __restrict y, int k) {
     assert(k % QK40 == 0);
     const int nb = k / QK40;
 
@@ -90,14 +86,10 @@ inline void dequantize_row_q4_0(const void* __restrict vx, float* __restrict y,
             const int16x8_t vi_1 = vmovl_s8(vget_high_s8(vq));
 
             // convert to 4x float32x4_t
-            const float32x4_t vf_0 =
-                    vcvtq_f32_s32(vmovl_s16(vget_low_s16(vi_0)));
-            const float32x4_t vf_1 =
-                    vcvtq_f32_s32(vmovl_s16(vget_high_s16(vi_0)));
-            const float32x4_t vf_2 =
-                    vcvtq_f32_s32(vmovl_s16(vget_low_s16(vi_1)));
-            const float32x4_t vf_3 =
-                    vcvtq_f32_s32(vmovl_s16(vget_high_s16(vi_1)));
+            const float32x4_t vf_0 = vcvtq_f32_s32(vmovl_s16(vget_low_s16(vi_0)));
+            const float32x4_t vf_1 = vcvtq_f32_s32(vmovl_s16(vget_high_s16(vi_0)));
+            const float32x4_t vf_2 = vcvtq_f32_s32(vmovl_s16(vget_low_s16(vi_1)));
+            const float32x4_t vf_3 = vcvtq_f32_s32(vmovl_s16(vget_high_s16(vi_1)));
 
             // Multiply by d
             const float32x4_t r0 = vmulq_f32(vf_0, vd);
@@ -114,8 +106,7 @@ inline void dequantize_row_q4_0(const void* __restrict vx, float* __restrict y,
     }
 }
 
-inline void quantize_row_q8_0(const float* __restrict x, void* __restrict vy,
-                              int k) {
+inline void quantize_row_q8_0(const float* __restrict x, void* __restrict vy, int k) {
     assert(k % QK80 == 0);
     BlockQ80* y = static_cast<BlockQ80*>(vy);
     naive::quantize_row_q8_0_reference(x, y, k);

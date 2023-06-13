@@ -61,9 +61,9 @@ static inline float compute_fp16_to_fp32(fp16_t h) {
             fp32_from_bits((two_w >> 17) | magic_mask) - magic_bias;
 
     const uint32_t denormalized_cutoff = UINT32_C(1) << 27;
-    const uint32_t result = sign | (two_w < denormalized_cutoff
-                                            ? fp32_to_bits(denormalized_value)
-                                            : fp32_to_bits(normalized_value));
+    const uint32_t result =
+            sign | (two_w < denormalized_cutoff ? fp32_to_bits(denormalized_value)
+                                                : fp32_to_bits(normalized_value));
     return fp32_from_bits(result);
 }
 
@@ -136,7 +136,7 @@ int main(int argc, char** argv) {
     printf("%s: vocab_offset  = %d \n", __func__, header.vocab_offset);
     printf("%s: vocab_length  = %d \n", __func__, header.vocab_length);
     printf("%s: tensor_offset = %d \n", __func__, header.tensor_offset);
-    
+
     fout.write((char*)&header, sizeof(header));
 
     // load model params and vocab
@@ -184,8 +184,8 @@ int main(int argc, char** argv) {
                         "q4_0",
                         "q4_1",
                 };
-                printf("%s, shape=[%d, %d], type = %s ", name.data(), ne[0],
-                       ne[1], ftype_str[ftype]);
+                printf("%s, shape=[%d, %d], type = %s ", name.data(), ne[0], ne[1],
+                       ftype_str[ftype]);
             }
 
             // regexes of tensor names to be quantized
@@ -212,23 +212,24 @@ int main(int argc, char** argv) {
                 }
                 if (ftype == 1) {
                     data_f16.resize(nelements);
-                    finp.read(reinterpret_cast<char*>(data_f16.data()),
-                              nelements * sizeof(fp16_t));
+                    finp.read(
+                            reinterpret_cast<char*>(data_f16.data()),
+                            nelements * sizeof(fp16_t));
                     data_f32.resize(nelements);
                     for (int i = 0; i < nelements; ++i) {
                         data_f32[i] = COMPUTE_FP16_TO_FP32(data_f16[i]);
                     }
                 } else {
                     data_f32.resize(nelements);
-                    finp.read(reinterpret_cast<char*>(data_f32.data()),
-                              nelements * sizeof(float));
+                    finp.read(
+                            reinterpret_cast<char*>(data_f32.data()),
+                            nelements * sizeof(float));
                 }
-                ftype = 2; // quantized to int4
+                ftype = 2;  // quantized to int4
             } else {
                 const int bpe = (ftype == 0) ? sizeof(float) : sizeof(uint16_t);
                 data_u8.resize(nelements * bpe);
-                finp.read(reinterpret_cast<char*>(data_u8.data()),
-                          nelements * bpe);
+                finp.read(reinterpret_cast<char*>(data_u8.data()), nelements * bpe);
                 // if fp16 convert to fp32
                 if (ftype == 1) {
                     data_f32.resize(nelements);
@@ -237,10 +238,9 @@ int main(int argc, char** argv) {
                         data_f32[i] = COMPUTE_FP16_TO_FP32(fp16_data[i]);
                     }
                     data_u8.resize(nelements * sizeof(float));
-                    memcpy(data_u8.data(), data_f32.data(),
-                           nelements * sizeof(float));
+                    memcpy(data_u8.data(), data_f32.data(), nelements * sizeof(float));
                 }
-                ftype = 0; // convert to fp32
+                ftype = 0;  // convert to fp32
             }
             // write tensor header
             fout.write(reinterpret_cast<char*>(&n_dims), sizeof(n_dims));
@@ -256,8 +256,7 @@ int main(int argc, char** argv) {
                 work.resize(nelements);  // for quantization
 
                 size_t cur_size = inferllm::naive::quantize_row_q4_0_reference(
-                        data_f32.data(), (inferllm::BlockQ40*)work.data(),
-                        nelements);
+                        data_f32.data(), (inferllm::BlockQ40*)work.data(), nelements);
 
                 fout.write(reinterpret_cast<char*>(work.data()), cur_size);
                 total_size_new += cur_size;
@@ -269,8 +268,7 @@ int main(int argc, char** argv) {
             } else {
                 printf("not quantized size = %f MB\n",
                        data_u8.size() / 1024.0 / 1024.0);
-                fout.write(reinterpret_cast<char*>(data_u8.data()),
-                           data_u8.size());
+                fout.write(reinterpret_cast<char*>(data_u8.data()), data_u8.size());
                 total_size_new += data_u8.size();
             }
 

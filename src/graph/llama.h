@@ -1,10 +1,10 @@
 #pragma once
 
 #include <unordered_map>
+#include "core/graph.h"
 #include "core/kvstorage.h"
 #include "core/op.h"
 #include "core/tensor.h"
-#include "core/graph.h"
 
 namespace inferllm {
 
@@ -22,8 +22,9 @@ public:
     void constuct_llm() override;
     uint32_t get_nr_ctx() override { return m_param.n_ctx; }
     uint32_t get_nr_vocab() override { return m_param.n_vocab; }
-    void load(std::shared_ptr<InputFile> fin, LlmParams& param,
-              std::shared_ptr<Vocab> vocab) override;
+    void load(
+            std::shared_ptr<InputFile> fin, LlmParams& param,
+            std::shared_ptr<Vocab> vocab) override;
 
 private:
     LlmParams m_param;

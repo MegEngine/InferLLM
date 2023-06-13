@@ -1,9 +1,8 @@
 #pragma once
 
-#include "tensor.h"
-#include "kvstorage.h"
 #include "kern/kernel.h"
-
+#include "kvstorage.h"
+#include "tensor.h"
 
 namespace inferllm {
 
@@ -48,9 +47,7 @@ public:
         m_outputs[0]->set_shape(m_inputs[0]->shape(), m_inputs[0]->dtype());
     };
 
-    virtual size_t get_workspace_in_byte() {
-        return 0;
-    }
+    virtual size_t get_workspace_in_byte() { return 0; }
 
     virtual void load_weights(std::ifstream&){};
 
@@ -85,14 +82,14 @@ private:
 
 class LayerNorm : public OpBase {
 public:
-    LayerNorm(Device* device, const std::string& name, OpIOs inputs,
-              size_t embd, bool mul = true, bool bias = false, bool rms = true)
+    LayerNorm(
+            Device* device, const std::string& name, OpIOs inputs, size_t embd,
+            bool mul = true, bool bias = false, bool rms = true)
             : OpBase(device, name, inputs), m_mul(mul), m_bias(bias) {
         add_outputs(std::make_shared<Tensor>(device, name + "_out0"));
         std::vector<std::shared_ptr<Tensor>> weights;
         if (m_mul) {
-            weights.push_back(
-                    std::make_shared<Tensor>(device, name + ".weight"));
+            weights.push_back(std::make_shared<Tensor>(device, name + ".weight"));
             weights.back()->set_shape({embd}, DType::Float32);
         }
         if (m_bias) {
@@ -148,7 +145,7 @@ public:
 
 class MatMulLast : public MatMul {
 public:
-   using MatMul::MatMul; 
+    using MatMul::MatMul;
 
     void deduce_output_shape() override {
         auto weight_shape = weights()[0]->shape();
@@ -210,8 +207,9 @@ private:
 
 class Elemwise : public OpBase {
 public:
-    Elemwise(Device* device, const std::string& name, OpIOs inputs,
-             ElemMode mode, float scale = -INFINITY)
+    Elemwise(
+            Device* device, const std::string& name, OpIOs inputs, ElemMode mode,
+            float scale = -INFINITY)
             : OpBase(device, name, inputs), m_mode(mode), m_scale(scale) {
         add_outputs(std::make_shared<Tensor>(device, name + "_out0"));
     }
@@ -236,11 +234,11 @@ public:
 //! out = softmax(q*k)*v
 class LlamaAttention : public OpBase {
 public:
-    LlamaAttention(Device* device, const std::string& name, OpIOs inputs,
-                   uint32_t embd, uint32_t rot, uint32_t nr_ctx, uint32_t head,
-                   KvStorage* kstorage, KvStorage* vstorage, uint32_t layer_id,
-                   bool fused_weights = false, bool bias = false,
-                   bool rotary_weight = false)
+    LlamaAttention(
+            Device* device, const std::string& name, OpIOs inputs, uint32_t embd,
+            uint32_t rot, uint32_t nr_ctx, uint32_t head, KvStorage* kstorage,
+            KvStorage* vstorage, uint32_t layer_id, bool fused_weights = false,
+            bool bias = false, bool rotary_weight = false)
             : OpBase(device, name, inputs),
               m_embd(embd),
               m_head(head),
@@ -254,8 +252,7 @@ public:
         add_outputs(std::make_shared<Tensor>(device, name + "_out"));
         std::vector<std::shared_ptr<Tensor>> weights;
         if (m_fused_weights) {
-            auto weight_fused =
-                    std::make_shared<Tensor>(device, name + ".wqkv.weight");
+            auto weight_fused = std::make_shared<Tensor>(device, name + ".wqkv.weight");
             weight_fused->set_shape(std::vector<size_t>{m_embd * 3, m_embd});
             weights.push_back(weight_fused);
             if (m_bias) {
@@ -265,27 +262,21 @@ public:
                 weights.push_back(weight_bias);
             }
         } else {
-            auto weight_q =
-                    std::make_shared<Tensor>(device, name + ".wq.weight");
+            auto weight_q = std::make_shared<Tensor>(device, name + ".wq.weight");
             weight_q->set_shape(std::vector<size_t>{embd, embd});
-            auto weight_k =
-                    std::make_shared<Tensor>(device, name + ".wk.weight");
+            auto weight_k = std::make_shared<Tensor>(device, name + ".wk.weight");
             weight_k->set_shape(std::vector<size_t>{embd, embd});
-            auto weight_v =
-                    std::make_shared<Tensor>(device, name + ".wv.weight");
+            auto weight_v = std::make_shared<Tensor>(device, name + ".wv.weight");
             weight_v->set_shape(std::vector<size_t>{embd, embd});
             weights.push_back(weight_q);
             weights.push_back(weight_k);
             weights.push_back(weight_v);
             if (m_bias) {
-                auto bias_q =
-                        std::make_shared<Tensor>(device, name + ".wq.bias");
+                auto bias_q = std::make_shared<Tensor>(device, name + ".wq.bias");
                 bias_q->set_shape(std::vector<size_t>{embd});
-                auto bias_k =
-                        std::make_shared<Tensor>(device, name + ".wk.bias");
+                auto bias_k = std::make_shared<Tensor>(device, name + ".wk.bias");
                 bias_k->set_shape(std::vector<size_t>{embd});
-                auto bias_v =
-                        std::make_shared<Tensor>(device, name + ".wv.bias");
+                auto bias_v = std::make_shared<Tensor>(device, name + ".wv.bias");
                 bias_v->set_shape(std::vector<size_t>{embd});
                 weights.push_back(bias_q);
                 weights.push_back(bias_k);
@@ -293,15 +284,14 @@ public:
             }
         }
         if (m_rotary_weights) {
-            auto rotary =
-                    std::make_shared<Tensor>(device, name + ".rotary.inv_freq");
+            auto rotary = std::make_shared<Tensor>(device, name + ".rotary.inv_freq");
             rotary->set_shape(std::vector<size_t>{m_head});
             weights.push_back(rotary);
         }
         set_weights(weights);
     }
 
-    void pre_execute() override{
+    void pre_execute() override {
         for (auto weight : weights()) {
             weight->prepare_data();
         }
@@ -346,11 +336,11 @@ private:
 
 class GlmAttention : public OpBase {
 public:
-    GlmAttention(Device* device, const std::string& name, OpIOs inputs,
-                 uint32_t embd, uint32_t rot, uint32_t nr_ctx, uint32_t head,
-                 KvStorage* kstorage, KvStorage* vstorage, uint32_t layer_id,
-                 bool fused_weights = false, bool bias = false,
-                 bool rotary_weight = false)
+    GlmAttention(
+            Device* device, const std::string& name, OpIOs inputs, uint32_t embd,
+            uint32_t rot, uint32_t nr_ctx, uint32_t head, KvStorage* kstorage,
+            KvStorage* vstorage, uint32_t layer_id, bool fused_weights = false,
+            bool bias = false, bool rotary_weight = false)
             : OpBase(device, name, inputs),
               m_embd(embd),
               m_head(head),
@@ -365,8 +355,7 @@ public:
         add_outputs(std::make_shared<Tensor>(device, name + "_out"));
         std::vector<std::shared_ptr<Tensor>> weights;
         if (m_fused_weights) {
-            auto weight_fused =
-                    std::make_shared<Tensor>(device, name + ".wqkv.weight");
+            auto weight_fused = std::make_shared<Tensor>(device, name + ".wqkv.weight");
             weight_fused->set_shape(std::vector<size_t>{m_embd * 3, m_embd});
             weights.push_back(weight_fused);
             if (m_bias) {
@@ -376,27 +365,21 @@ public:
                 weights.push_back(weight_bias);
             }
         } else {
-            auto weight_q =
-                    std::make_shared<Tensor>(device, name + ".wq.weight");
+            auto weight_q = std::make_shared<Tensor>(device, name + ".wq.weight");
             weight_q->set_shape(std::vector<size_t>{embd, embd});
-            auto weight_k =
-                    std::make_shared<Tensor>(device, name + ".wk.weight");
+            auto weight_k = std::make_shared<Tensor>(device, name + ".wk.weight");
             weight_k->set_shape(std::vector<size_t>{embd, embd});
-            auto weight_v =
-                    std::make_shared<Tensor>(device, name + ".wv.weight");
+            auto weight_v = std::make_shared<Tensor>(device, name + ".wv.weight");
             weight_v->set_shape(std::vector<size_t>{embd, embd});
             weights.push_back(weight_q);
             weights.push_back(weight_k);
             weights.push_back(weight_v);
             if (m_bias) {
-                auto bias_q =
-                        std::make_shared<Tensor>(device, name + ".wq.bias");
+                auto bias_q = std::make_shared<Tensor>(device, name + ".wq.bias");
                 bias_q->set_shape(std::vector<size_t>{embd});
-                auto bias_k =
-                        std::make_shared<Tensor>(device, name + ".wk.bias");
+                auto bias_k = std::make_shared<Tensor>(device, name + ".wk.bias");
                 bias_k->set_shape(std::vector<size_t>{embd});
-                auto bias_v =
-                        std::make_shared<Tensor>(device, name + ".wv.bias");
+                auto bias_v = std::make_shared<Tensor>(device, name + ".wv.bias");
                 bias_v->set_shape(std::vector<size_t>{embd});
                 weights.push_back(bias_q);
                 weights.push_back(bias_k);
@@ -404,15 +387,14 @@ public:
             }
         }
         if (m_rotary_weights) {
-            auto rotary =
-                    std::make_shared<Tensor>(device, name + ".rotary.inv_freq");
+            auto rotary = std::make_shared<Tensor>(device, name + ".rotary.inv_freq");
             rotary->set_shape(std::vector<size_t>{m_head});
             weights.push_back(rotary);
         }
         set_weights(weights);
     }
 
-    void pre_execute() override{
+    void pre_execute() override {
         for (auto weight : weights()) {
             weight->prepare_data();
         }
@@ -450,7 +432,7 @@ private:
     uint32_t m_ctx;
     uint32_t m_layer_id;
     uint32_t m_gmask_position;
-    
+
     bool m_fused_weights;
     bool m_bias;
     bool m_rotary_weights;
@@ -460,8 +442,9 @@ private:
 
 class Embedding : public OpBase {
 public:
-    Embedding(OpIOs inputs, uint32_t embd, uint32_t vocab,
-              DType compt_type, Device* device, const std::string& name)
+    Embedding(
+            OpIOs inputs, uint32_t embd, uint32_t vocab, DType compt_type,
+            Device* device, const std::string& name)
             : OpBase(device, name, inputs),
               m_embd(embd),
               m_vocab(vocab),

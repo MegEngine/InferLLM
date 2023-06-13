@@ -7,20 +7,19 @@
 #include <string>
 #include <thread>
 #include <vector>
-#if defined (__unix__) || (defined (__APPLE__) && defined (__MACH__))
+#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
 #include <signal.h>
 #include <unistd.h>
-#elif defined (_WIN32)
-#include <windows.h>
+#elif defined(_WIN32)
 #include <signal.h>
+#include <windows.h>
 #endif
 
 #include "model.h"
 
 struct app_params {
     int32_t seed = -1;  // RNG seed
-    int32_t n_threads =
-            std::min(4, (int32_t)std::thread::hardware_concurrency());
+    int32_t n_threads = std::min(4, (int32_t)std::thread::hardware_concurrency());
     int32_t n_predict = 128;     // new tokens to predict
     int32_t repeat_last_n = 64;  // last n tokens to penalize
     int32_t n_ctx = 2048;        // context size
@@ -33,31 +32,53 @@ struct app_params {
 
     std::string model = "ggml-alpaca-7b-q4.bin";  // model path
 
-    bool use_color = true;  // use color to distinguish generations and inputs
-    bool use_mmap = false;  // use mmap to load model
+    bool use_color = true;          // use color to distinguish generations and inputs
+    bool use_mmap = false;          // use mmap to load model
     std::string dtype = "float32";  // configure the compute dtype
-    std::string mtype = "llama";  // the model type name, llama
+    std::string mtype = "llama";    // the model type name, llama
 };
 
-void app_print_usage(int argc, char ** argv, const app_params & params) {
+void app_print_usage(int argc, char** argv, const app_params& params) {
     fprintf(stderr, "usage: %s [options]\n", argv[0]);
     fprintf(stderr, "\n");
     fprintf(stderr, "options:\n");
     fprintf(stderr, "  -h, --help            show this help message and exit\n");
-    fprintf(stderr, "  --color               colorise output to distinguish prompt and user input from generations\n");
+    fprintf(stderr,
+            "  --color               colorise output to distinguish prompt and user "
+            "input from generations\n");
     fprintf(stderr, "  -s SEED, --seed SEED  RNG seed (default: -1)\n");
-    fprintf(stderr, "  -t N, --threads N     number of threads to use during computation (default: %d)\n", params.n_threads);
-    fprintf(stderr, "  --top_k N             top-k sampling (default: %d)\n", params.top_k);
-    fprintf(stderr, "  --top_p N             top-p sampling (default: %.1f)\n", params.top_p);
-    fprintf(stderr, "  --repeat_last_n N     last n tokens to consider for penalize (default: %d)\n", params.repeat_last_n);
-    fprintf(stderr, "  --repeat_penalty N    penalize repeat sequence of tokens (default: %.1f)\n", params.repeat_penalty);
-    fprintf(stderr, "  -c N, --ctx_size N    size of the prompt context (default: %d)\n", params.n_ctx);
-    fprintf(stderr, "  --temp N              temperature (default: %.1f)\n", params.temp);
+    fprintf(stderr,
+            "  -t N, --threads N     number of threads to use during computation "
+            "(default: %d)\n",
+            params.n_threads);
+    fprintf(stderr, "  --top_k N             top-k sampling (default: %d)\n",
+            params.top_k);
+    fprintf(stderr, "  --top_p N             top-p sampling (default: %.1f)\n",
+            params.top_p);
+    fprintf(stderr,
+            "  --repeat_last_n N     last n tokens to consider for penalize (default: "
+            "%d)\n",
+            params.repeat_last_n);
+    fprintf(stderr,
+            "  --repeat_penalty N    penalize repeat sequence of tokens (default: "
+            "%.1f)\n",
+            params.repeat_penalty);
+    fprintf(stderr,
+            "  -c N, --ctx_size N    size of the prompt context (default: %d)\n",
+            params.n_ctx);
+    fprintf(stderr, "  --temp N              temperature (default: %.1f)\n",
+            params.temp);
     fprintf(stderr, "  -m FNAME, --model FNAME\n");
-    fprintf(stderr, "                        model path (default: %s)\n", params.model.c_str());
-    fprintf(stderr, "  --mmap                enable mmap when read weights, default = false\n");
-    fprintf(stderr, "  -d type               configure the compute type, default float32, can be float32 and flot16 now.\n");
-    fprintf(stderr, "  --model_type type     the model type name, default llama, can only be llama now.\n");
+    fprintf(stderr, "                        model path (default: %s)\n",
+            params.model.c_str());
+    fprintf(stderr,
+            "  --mmap                enable mmap when read weights, default = false\n");
+    fprintf(stderr,
+            "  -d type               configure the compute type, default float32, can "
+            "be float32 and flot16 now.\n");
+    fprintf(stderr,
+            "  --model_type type     the model type name, default llama, can only be "
+            "llama now.\n");
     fprintf(stderr, "\n");
 }
 
@@ -135,16 +156,15 @@ int main(int argc, char** argv) {
     std::shared_ptr<inferllm::Model> model =
             std::make_shared<inferllm::Model>(config, params.mtype);
     model->load(params.model);
-    model->init(params.top_k, params.top_p, params.temp, params.repeat_penalty,
-                params.repeat_last_n, params.seed, 2);
+    model->init(
+            params.top_k, params.top_p, params.temp, params.repeat_penalty,
+            params.repeat_last_n, params.seed, 2);
 
     std::string instruct_inp =
             " Below is an instruction that describes a task. Write a response "
             "that appropriately completes the request.\n\n";
     std::string prompt_inp = "### Instruction:\n\n";
     std::string response_inp = "### Response:\n\n";
-
-
 
     // print the basic parameters
     fprintf(stderr, "%s: interactive mode on.\n", __func__);
@@ -159,8 +179,7 @@ int main(int argc, char** argv) {
 
     fprintf(stderr,
             "== Running in chat mode. ==\n"
-#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__)) || \
-        defined(_WIN32)
+#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__)) || defined(_WIN32)
             " - Press Ctrl+C to interject at any time.\n"
 #endif
             " - If you want to submit another line, end your input in "

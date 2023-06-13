@@ -7,48 +7,44 @@
 namespace inferllm {
 namespace opt {
 
-inline void elemwise_vector_add(const int n, const float* __restrict x,
-                                const float* __restrict y,
-                                float* __restrict z) {
+inline void elemwise_vector_add(
+        const int n, const float* __restrict x, const float* __restrict y,
+        float* __restrict z) {
     for (int i = 0; i < n; i++) {
         z[i] = x[i] + y[i];
     }
 }
 
-
-inline void elemwise_vector_mul(const int n, const float* __restrict x,
-                                const float* __restrict y,
-                                float* __restrict z) {
+inline void elemwise_vector_mul(
+        const int n, const float* __restrict x, const float* __restrict y,
+        float* __restrict z) {
     for (int i = 0; i < n; i++) {
         z[i] = x[i] * y[i];
     }
 }
 
-
-inline void elemwise_vector_silu(const int n, const float* __restrict x,
-                                 float* __restrict z) {
+inline void elemwise_vector_silu(
+        const int n, const float* __restrict x, float* __restrict z) {
     for (int i = 0; i < n; i++) {
         z[i] = x[i] / (1 + exp(-x[i]));
     }
 }
 
-inline void elemwise_vector_gelu(const int n, const float* __restrict x,
-                                 float* __restrict z) {
+inline void elemwise_vector_gelu(
+        const int n, const float* __restrict x, float* __restrict z) {
     for (int i = 0; i < n; i++) {
         float src = x[i];
-        z[i] = 0.5 * src *
-               (1 + tanh(sqrt(2.0 / PI) * (src + PGELU * src * src * src)));
+        z[i] = 0.5 * src * (1 + tanh(sqrt(2.0 / PI) * (src + PGELU * src * src * src)));
     }
 }
 
-inline void elemwise_vec_scale(const int n, const float* __restrict x,
-                               float scale, float* __restrict z) {
+inline void elemwise_vec_scale(
+        const int n, const float* __restrict x, float scale, float* __restrict z) {
     int i = 0;
     for (; i < n; i++) {
         z[i] = x[i] * scale;
     }
 }
-
 
 inline float reduce_square_sum(const int n, const float* __restrict x) {
     float sum = 0.0f;
@@ -58,7 +54,6 @@ inline float reduce_square_sum(const int n, const float* __restrict x) {
     return sum;
 }
 
-
 inline float reduce_max(const int n, const float* __restrict x) {
     float max = -INFINITY;
     for (int i = 0; i < n; i++) {
@@ -67,12 +62,8 @@ inline float reduce_max(const int n, const float* __restrict x) {
     return max;
 }
 
-
-
-inline float select_sub_max_and_reduce_sum(const int n,
-                                           const float* __restrict x,
-                                           float* __restrict y,
-                                           const float max) {
+inline float select_sub_max_and_reduce_sum(
+        const int n, const float* __restrict x, float* __restrict y, const float max) {
     float sum = 0.0f;
     for (uint32_t i = 0; i < n; i++) {
         if (x[i] == -INFINITY) {
@@ -86,12 +77,10 @@ inline float select_sub_max_and_reduce_sum(const int n,
     return sum;
 }
 
-inline void compute_src_offset_embd_matmul(const float* __restrict srcq_head,
-                                           int offsetq,
-                                           const float* __restrict srck_head,
-                                           int offsetk, float* dst_head,
-                                           int seqlen, int length,
-                                           int sub_embd) {
+inline void compute_src_offset_embd_matmul(
+        const float* __restrict srcq_head, int offsetq,
+        const float* __restrict srck_head, int offsetk, float* dst_head, int seqlen,
+        int length, int sub_embd) {
     for (uint32_t row = 0; row < seqlen; row++) {
         auto p_srcq = srcq_head + row * offsetq;
         uint32_t len = 0;
@@ -128,12 +117,9 @@ inline void compute_src_offset_embd_matmul(const float* __restrict srcq_head,
     }
 }
 
-inline void comput_matmul_with_dst_uncontinue(float* __restrict dst,
-                                              int offset_dst,
-                                              const float* __restrict srcv,
-                                              int offset_v,
-                                              const float* __restrict srcqk,
-                                              int seqlen, int length, int K) {
+inline void comput_matmul_with_dst_uncontinue(
+        float* __restrict dst, int offset_dst, const float* __restrict srcv,
+        int offset_v, const float* __restrict srcqk, int seqlen, int length, int K) {
     for (uint32_t row = 0; row < seqlen; row++) {
         auto p_qk = srcqk + row * length;
         for (uint32_t len = 0; len < K; len++) {
@@ -148,8 +134,8 @@ inline void comput_matmul_with_dst_uncontinue(float* __restrict dst,
     }
 }
 
-inline float vec_vec_dot_q40_with_q80(const int n, const void* __restrict vx,
-                                      const void* __restrict vy) {
+inline float vec_vec_dot_q40_with_q80(
+        const int n, const void* __restrict vx, const void* __restrict vy) {
     const int nb = n / QK80;
 
     assert(n % QK80 == 0);
@@ -199,41 +185,31 @@ inline float vec_vec_dot_q40_with_q80(const int n, const void* __restrict vx,
 
 #if defined(__ARM_FEATURE_DOTPROD)
         // dot product into int32x4_t
-        const int32x4_t p_0 = vdotq_s32(
-                vdotq_s32(vdupq_n_s32(0), v0_0ls, v1_0ls), v0_0hs, v1_0hs);
-        const int32x4_t p_1 = vdotq_s32(
-                vdotq_s32(vdupq_n_s32(0), v0_1ls, v1_1ls), v0_1hs, v1_1hs);
+        const int32x4_t p_0 =
+                vdotq_s32(vdotq_s32(vdupq_n_s32(0), v0_0ls, v1_0ls), v0_0hs, v1_0hs);
+        const int32x4_t p_1 =
+                vdotq_s32(vdotq_s32(vdupq_n_s32(0), v0_1ls, v1_1ls), v0_1hs, v1_1hs);
 
         sumv0 = vmlaq_n_f32(sumv0, vcvtq_f32_s32(p_0), x0->d * y0->d);
         sumv1 = vmlaq_n_f32(sumv1, vcvtq_f32_s32(p_1), x1->d * y1->d);
 #else
-        const int16x8_t pl0l =
-                vmull_s8(vget_low_s8(v0_0ls), vget_low_s8(v1_0ls));
-        const int16x8_t pl0h =
-                vmull_s8(vget_high_s8(v0_0ls), vget_high_s8(v1_0ls));
-        const int16x8_t ph0l =
-                vmull_s8(vget_low_s8(v0_0hs), vget_low_s8(v1_0hs));
-        const int16x8_t ph0h =
-                vmull_s8(vget_high_s8(v0_0hs), vget_high_s8(v1_0hs));
+        const int16x8_t pl0l = vmull_s8(vget_low_s8(v0_0ls), vget_low_s8(v1_0ls));
+        const int16x8_t pl0h = vmull_s8(vget_high_s8(v0_0ls), vget_high_s8(v1_0ls));
+        const int16x8_t ph0l = vmull_s8(vget_low_s8(v0_0hs), vget_low_s8(v1_0hs));
+        const int16x8_t ph0h = vmull_s8(vget_high_s8(v0_0hs), vget_high_s8(v1_0hs));
 
-        const int16x8_t pl1l =
-                vmull_s8(vget_low_s8(v0_1ls), vget_low_s8(v1_1ls));
-        const int16x8_t pl1h =
-                vmull_s8(vget_high_s8(v0_1ls), vget_high_s8(v1_1ls));
-        const int16x8_t ph1l =
-                vmull_s8(vget_low_s8(v0_1hs), vget_low_s8(v1_1hs));
-        const int16x8_t ph1h =
-                vmull_s8(vget_high_s8(v0_1hs), vget_high_s8(v1_1hs));
+        const int16x8_t pl1l = vmull_s8(vget_low_s8(v0_1ls), vget_low_s8(v1_1ls));
+        const int16x8_t pl1h = vmull_s8(vget_high_s8(v0_1ls), vget_high_s8(v1_1ls));
+        const int16x8_t ph1l = vmull_s8(vget_low_s8(v0_1hs), vget_low_s8(v1_1hs));
+        const int16x8_t ph1h = vmull_s8(vget_high_s8(v0_1hs), vget_high_s8(v1_1hs));
 
         const int32x4_t pl0 = vaddq_s32(vpaddlq_s16(pl0l), vpaddlq_s16(pl0h));
         const int32x4_t ph0 = vaddq_s32(vpaddlq_s16(ph0l), vpaddlq_s16(ph0h));
         const int32x4_t pl1 = vaddq_s32(vpaddlq_s16(pl1l), vpaddlq_s16(pl1h));
         const int32x4_t ph1 = vaddq_s32(vpaddlq_s16(ph1l), vpaddlq_s16(ph1h));
 
-        sumv0 = vmlaq_n_f32(sumv0, vcvtq_f32_s32(vaddq_s32(pl0, ph0)),
-                            x0->d * y0->d);
-        sumv1 = vmlaq_n_f32(sumv1, vcvtq_f32_s32(vaddq_s32(pl1, ph1)),
-                            x1->d * y1->d);
+        sumv0 = vmlaq_n_f32(sumv0, vcvtq_f32_s32(vaddq_s32(pl0, ph0)), x0->d * y0->d);
+        sumv1 = vmlaq_n_f32(sumv1, vcvtq_f32_s32(vaddq_s32(pl1, ph1)), x1->d * y1->d);
 #endif
     }
     return vaddvq_f32(sumv0) + vaddvq_f32(sumv1);

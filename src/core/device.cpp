@@ -56,8 +56,9 @@ void Device::free_device(void* ptr) {
 #ifdef ENABLE_ASAN
     aligned_free(ptr);
 #else
-    INFER_ASSERT(m_alloc_memory.count(ptr) == 1,
-                 "memory is not allocated by the DeviceCPU.");
+    INFER_ASSERT(
+            m_alloc_memory.count(ptr) == 1,
+            "memory is not allocated by the DeviceCPU.");
     size_t len = m_alloc_memory[ptr];
     m_free_memory[len].push_back(ptr);
 #endif
@@ -67,8 +68,9 @@ Device::~Device() {
 #ifndef ENABLE_ASAN
     for (auto it : m_free_memory) {
         for (auto ptr : it.second) {
-            INFER_ASSERT(m_alloc_memory.count(ptr) == 1,
-                         "memory is not allocated by the DeviceCPU.");
+            INFER_ASSERT(
+                    m_alloc_memory.count(ptr) == 1,
+                    "memory is not allocated by the DeviceCPU.");
             aligned_free(ptr);
         }
     }

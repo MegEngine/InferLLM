@@ -19,8 +19,7 @@ void ChatGLMGraph::set_weights_alias() {
              "layers.x.attention.wqkv.bias"},
             {"transformer.layers.x.attention.dense.weight",
              "layers.x.attention.wo.weight"},
-            {"transformer.layers.x.attention.dense.bias",
-             "layers.x.attention.wo.bias"},
+            {"transformer.layers.x.attention.dense.bias", "layers.x.attention.wo.bias"},
             {"transformer.layers.x.post_attention_layernorm.weight",
              "layers.x.ffn_norm.weight"},
             {"transformer.layers.x.post_attention_layernorm.bias",
@@ -41,8 +40,9 @@ void ChatGLMGraph::set_weights_alias() {
 }
 
 //! LlamaGraph
-void ChatGLMGraph::load(std::shared_ptr<InputFile> fin, LlmParams& param,
-                        std::shared_ptr<Vocab> vocab) {
+void ChatGLMGraph::load(
+        std::shared_ptr<InputFile> fin, LlmParams& param,
+        std::shared_ptr<Vocab> vocab) {
     // verify the magic number wrote when model convert
     uint32_t magic;
     uint32_t version = 0;
@@ -105,11 +105,12 @@ void ChatGLMGraph::load(std::shared_ptr<InputFile> fin, LlmParams& param,
         std::string name(length, 0);
         fin->read_raw(&name[0], length);
         auto alias_name = get_weight_alias(name);
-        INFER_ASSERT(m_weights_map.count(alias_name) == 1,
-                     "Error weight is not found when loading.");
+        INFER_ASSERT(
+                m_weights_map.count(alias_name) == 1,
+                "Error weight is not found when loading.");
         auto weight = m_weights_map[alias_name];
-        INFER_ASSERT(weight->length() == nr_number,
-                     "Error length of weight is mismatch.");
+        INFER_ASSERT(
+                weight->length() == nr_number, "Error length of weight is mismatch.");
         weight->set_file(fin, fin->tell());
         weight->set_dtype(convert_dtype(ftype));
         fin->skip(weight->length_in_byte());
@@ -122,8 +123,8 @@ void ChatGLMGraph::constuct_llm() {
     m_input = std::make_shared<Tensor>(device(), name() + ":input");
     std::shared_ptr<Tensor> input = m_input;
     //! embd
-    input = add_module<EmbdModule>(this, input, m_param.n_embd, m_param.n_vocab,
-                                   model_config(), device(), "");
+    input = add_module<EmbdModule>(
+            this, input, m_param.n_embd, m_param.n_vocab, model_config(), device(), "");
 
     int nr_layer = m_param.n_layer;
     float scale = sqrt(2 * nr_layer);
@@ -132,45 +133,45 @@ void ChatGLMGraph::constuct_llm() {
         //! layer norm
         std::shared_ptr<Tensor> attention_input = input;
         auto norm_out_attention =
-                add_one_opr_module<LayerNorm>(this, OpIOs{attention_input},
-                                              device(),
-                                              name + ".attention_norm")
-                        ->add_opr(m_param.n_embd, /*mul*/ true, /*bias*/ true,
-                                  /*rms*/ false);
+                add_one_opr_module<LayerNorm>(
+                        this, OpIOs{attention_input}, device(),
+                        name + ".attention_norm")
+                        ->add_opr(
+                                m_param.n_embd, /*mul*/ true, /*bias*/ true,
+                                /*rms*/ false);
         //! attentin
         auto attention_output = add_module<AttentionModule<GlmAttention>>(
-                this, norm_out_attention, m_param.n_embd, m_param.n_head,
-                m_param.n_rot, m_param.n_ctx, model_config(), device(),
-                name + ".attention", i, true /*fused_weights*/, true /*bias*/,
-                true /*rotary*/);
+                this, norm_out_attention, m_param.n_embd, m_param.n_head, m_param.n_rot,
+                m_param.n_ctx, model_config(), device(), name + ".attention", i,
+                true /*fused_weights*/, true /*bias*/, true /*rotary*/);
         //! add  norm_out_attention * scale + attention_output
-        auto add_output =
-                add_one_opr_module<Elemwise>(
-                        this, OpIOs{norm_out_attention, attention_output},
-                        device(), name + ".attention.Elemwise")
-                        ->add_opr(ElemMode::Add, scale);
+        auto add_output = add_one_opr_module<Elemwise>(
+                                  this, OpIOs{norm_out_attention, attention_output},
+                                  device(), name + ".attention.Elemwise")
+                                  ->add_opr(ElemMode::Add, scale);
 
         std::shared_ptr<Tensor> feed_forward_input = add_output;
         //! layer normal
         auto ffn_norm_out =
-                add_one_opr_module<LayerNorm>(this, OpIOs{feed_forward_input},
-                                              device(), name + ".ffn_norm")
-                        ->add_opr(m_param.n_embd, /*mul*/ true, /*bias*/ true,
-                                  /*rms*/ false);
+                add_one_opr_module<LayerNorm>(
+                        this, OpIOs{feed_forward_input}, device(), name + ".ffn_norm")
+                        ->add_opr(
+                                m_param.n_embd, /*mul*/ true, /*bias*/ true,
+                                /*rms*/ false);
         //! feed forward
         auto ffn_output = add_module<GlmFFNModule>(
-                this, ffn_norm_out, m_param.n_embd, m_param.n_mult,
-                model_config(), device(), name);
+                this, ffn_norm_out, m_param.n_embd, m_param.n_mult, model_config(),
+                device(), name);
         //! add ffn_norm_out * scale + ffn_output
-        input = add_one_opr_module<Elemwise>(this,
-                                             OpIOs{ffn_norm_out, ffn_output},
-                                             device(), name + ".ffn.Elemwise")
+        input = add_one_opr_module<Elemwise>(
+                        this, OpIOs{ffn_norm_out, ffn_output}, device(),
+                        name + ".ffn.Elemwise")
                         ->add_opr(ElemMode::Add, scale);
     }
     //! the last layer
-    m_output =
-            add_module<HeadModule>(this, input, m_param.n_embd, m_param.n_vocab,
-                                   model_config(), device(), "head", true);
+    m_output = add_module<HeadModule>(
+            this, input, m_param.n_embd, m_param.n_vocab, model_config(), device(),
+            "head", true);
 }
 
 void ChatGLMGraph::post_tokenize(std::vector<Vocab::Id>& input) {

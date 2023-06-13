@@ -1,14 +1,14 @@
 #pragma once
 
-#include <string>
-#include <memory>
-#include <map>
 #include <list>
+#include <map>
+#include <memory>
+#include <string>
 
-#include "model.h"
 #include "device.h"
 #include "graph.h"
-#include "kern/kernel_define.h" 
+#include "kern/kernel_define.h"
+#include "model.h"
 
 namespace inferllm {
 
@@ -56,8 +56,9 @@ public:
     void load(const std::string& model_path);
 
     //! allocate memory for the model or init its param
-    void init(uint32_t top_k, float top_p, float temp, float repeat_penalty,
-              int repeat_last_n, int32_t seed, int32_t end_token) {
+    void init(
+            uint32_t top_k, float top_p, float temp, float repeat_penalty,
+            int repeat_last_n, int32_t seed, int32_t end_token) {
         m_top_k = top_k;
         m_top_p = top_p;
         m_temp = temp;

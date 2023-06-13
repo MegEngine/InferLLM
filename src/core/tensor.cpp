@@ -2,7 +2,6 @@
 #include "memory.h"
 #include "utils.h"
 
-
 using namespace inferllm;
 
 float inferllm::dtype_in_byte(DType dtype) {
@@ -79,8 +78,9 @@ TensorState Tensor::recall_data() {
 }
 
 void Tensor::set_shared_memory(void* data, size_t size) {
-    INFER_ASSERT(data == nullptr || size >= length_in_byte(),
-                 "the memory set to tensor is not enough");
+    INFER_ASSERT(
+            data == nullptr || size >= length_in_byte(),
+            "the memory set to tensor is not enough");
     m_state = TensorState::Own;
     m_data = data;
     m_shared = true;
