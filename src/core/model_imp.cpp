@@ -136,5 +136,7 @@ std::string ModelImp::decode_summary() const {
     ret += "Total Model Compute Token:  " + std::to_string(m_past) + "\n";
     ret += "Average Token Compute Time: " +
            std::to_string(m_time_cost * 1000 / m_past) + "ms\n";
+    ret += "Average Token Generation Speed: " +
+           std::to_string(m_past / m_time_cost) + "token/s\n";
     return ret;
 }

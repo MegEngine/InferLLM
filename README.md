@@ -38,8 +38,7 @@ If it is executed locally, execute `./chatglm -m chatglm-q4.bin -t 4` directly. 
 - android is xiaomi9，Qualcomm SM8150 Snapdragon 855
 ![android running](./assets/arm-mi9.gif)
 
-### supported model
+### Supported model
 Now InferLLM supports [ChatGLM-6B](https://github.com/THUDM/ChatGLM-6B), [llama](https://github.com/facebookresearch/llama), [alpaca](https://crfm.stanford.edu/2023/03/13/alpaca.html) models.
 ### License
 InferLLM is licensed under the Apache License, Version 2.0
-
