@@ -33,5 +33,7 @@ export NDK_ROOT=/path/to/ndk
 - 手机是 xiaomi9，Qualcomm SM8150 Snapdragon 855
 ![x86执行](./assets/x86.gif) ![手机执行](./assets/android.gif)
 
+根据 [x86测速结果](./docs/profile.md)，我们推荐使用 4 线程。
+
 ### License
 InferLLM is licensed under the Apache License, Version 2.0
