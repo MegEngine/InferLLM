@@ -36,14 +36,16 @@ public:
 
     void deactive() { m_thread_pool->deactive(); }
 
+    void copyd2d(void* dst, void* src, size_t size) { memcpy(dst, src, size); };
+
+    void* aligned_alloc(size_t size);
+    void aligned_free(void* ptr);
+
 private:
     std::unique_ptr<Kernel> m_kernel;
     std::unique_ptr<ThreadPool> m_thread_pool;
     std::map<size_t, std::vector<void*>> m_free_memory;
     std::map<void*, size_t> m_alloc_memory;
-
-    void* aligned_alloc(size_t size);
-    void aligned_free(void* ptr);
 };
 
 }  // namespace inferllm

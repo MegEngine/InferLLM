@@ -292,6 +292,7 @@ public:
     }
 
     void pre_execute() override {
+        auto token_len = inputs()[0]->shape()[0];
         for (auto weight : weights()) {
             weight->prepare_data();
         }
@@ -300,8 +301,8 @@ public:
             output->prepare_data();
             output->resume_user_count();
         }
-        m_kstorage->prepare_data();
-        m_vstorage->prepare_data();
+        m_kstorage->prepare_data_with_length(token_len);
+        m_vstorage->prepare_data_with_length(token_len);
     }
 
     void execute(WorkSpace* workspace, uint32_t nr_past) override;
@@ -395,6 +396,7 @@ public:
     }
 
     void pre_execute() override {
+        auto token_len = inputs()[0]->shape()[0];
         for (auto weight : weights()) {
             weight->prepare_data();
         }
@@ -403,8 +405,8 @@ public:
             output->prepare_data();
             output->resume_user_count();
         }
-        m_kstorage->prepare_data();
-        m_vstorage->prepare_data();
+        m_kstorage->prepare_data_with_length(token_len);
+        m_vstorage->prepare_data_with_length(token_len);
     }
 
     void execute(WorkSpace* workspace, uint32_t nr_past) override;
