@@ -165,7 +165,7 @@ inline float vec_vec_dot_q40_with_q80(
 #if defined(__FMA__)
         acc = _mm256_fmadd_ps(d, q, acc);
 #else
-        acc = _mm256_add_ps(_mm256_mul_ps(d, p), acc);
+        acc = _mm256_add_ps(_mm256_mul_ps(d, q), acc);
 #endif
     }
 
