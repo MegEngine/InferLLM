@@ -5,15 +5,22 @@
 #include <stdint.h>
 #include "core/thread_pool.h"
 #include "kern/kernel_define.h"
-#include "kern/naive/naive.h"
-#include "kern/optimized/kernel_opt.h"
 #include "utils.h"
 
-#if ENABLE_GPU
-#include "kern/gpu/kernel_gpu.h"
+#if INFER_X86
+#include "kern/optimized/x86/kernel.h"
+#elif INFER_ARM
+#include "kern/optimized/arm/kernel.h"
+#else
+#include "kern/naive/naive.h"
+#endif
+
+#ifdef ENABLE_GPU
+#include "kern/optimized/gpu/kernel_gpu.h"
 #endif
 
 namespace inferllm {
+
 class Kernel {
 public:
     Kernel(KernelType kernel_type) : m_kernel_type(kernel_type) {}
@@ -47,6 +54,7 @@ public:
     size_t get_workspace(Args... args) {
         return opt::Space<Id, Args...>::get(std::forward<Args>(args)...);
     }
+
     ThreadPool* m_thread_pool;
     KernelType m_kernel_type;
 #if ENABLE_GPU
@@ -54,5 +62,5 @@ public:
     cudaStream_t m_stream;
 #endif
 };
-// namespace inferllm
+
 }  // namespace inferllm

@@ -1,5 +1,6 @@
 #pragma once
-#include "kern/kernel.h"
+
+#include "kern/kernel_define.h"
 #include "kern/naive/quantize.h"
 #include "math.h"
 #include "string.h"
@@ -76,6 +77,7 @@ TaskSet llm_matmul_compute_with_head_stride_float(
 TaskSet llm_head_batched_matmul_compute_float(
         float* dst, const float* v, const float* qk, uint32_t seqlen, uint32_t embd,
         uint32_t head, uint32_t nr_past);
+
 template <KernelID Id, typename... Args>
 struct Comp {
     static TaskSet get_all_task(Args... args);
@@ -86,32 +88,6 @@ struct Space {
     static size_t get(Args... args);
 };
 
-}  // namespace naive
-
-}  // namespace inferllm
-#ifdef PartialImplementKernel
-#undef PartialImplementKernel
-#endif
-#ifdef PartialImplementSpace
-#undef PartialImplementSpace
-#endif
-
-#define PartialImplementKernel(kernel_id, fun)       \
-    template <typename... Args>                      \
-    struct Comp<KernelID::kernel_id, Args...> {      \
-        static TaskSet get_all_task(Args... args) {  \
-            return fun(std::forward<Args>(args)...); \
-        }                                            \
-    };
-
-#define PartialImplementSpace(kernel_id, fun)                                        \
-    template <typename... Args>                                                      \
-    struct Space<KernelID::kernel_id, Args...> {                                     \
-        static size_t get(Args... args) { return fun(std::forward<Args>(args)...); } \
-    };
-
-namespace inferllm {
-namespace naive {
 PartialImplementKernel(ElemwiseFloat, llm_elemwise_compute_float);
 PartialImplementKernel(ElemwiseFloatScale, llm_elemwise_compute_float_scale);
 PartialImplementKernel(
@@ -136,8 +112,25 @@ PartialImplementKernel(PermuteFloat, llm_permute_compute_float);
 PartialImplementSpace(MatmulInt4Float, llm_matmul_get_workspace_float);
 PartialImplementSpace(MatmulFloatFloat, llm_matmul_get_workspace_float_float);
 
-#undef PartialImplementKernel
-#undef PartialImplementSpace
-
 }  // namespace naive
+
+namespace opt {
+template <KernelID Id, typename... Args>
+struct Comp {
+    static TaskSet get_all_task(Args... args) {
+        //! if arm not implement, fallback to naive
+        return naive::Comp<Id, Args...>::get_all_task(std::forward<Args>(args)...);
+    }
+};
+
+template <KernelID Id, typename... Args>
+struct Space {
+    //! if arm not implement, fallback to naive
+    static size_t get(Args... args) {
+        return naive::Space<Id, Args...>::get(std::forward<Args>(args)...);
+    }
+};
+
+}  // namespace opt
+
 }  // namespace inferllm

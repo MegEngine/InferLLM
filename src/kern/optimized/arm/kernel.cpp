@@ -4,22 +4,15 @@
 #include "utils.h"
 
 #include "core/tensor.h"
-#include "kern/optimized/kernel_opt.h"
-
-#if INFER_X86
-#include "kern/optimized/x86/optimized_x86.h"
-#include "kern/optimized/x86/quantize.h"
-#endif
-
-#if INFER_ARM
-#include "kern/optimized/arm/optimized_arm.h"
-#include "kern/optimized/arm/quantize.h"
-#endif
+#include "kernel.h"
+#include "optimized.h"
+#include "quantize.h"
 
 using namespace inferllm;
 
 namespace inferllm {
 namespace opt {
+
 TaskSet llm_embedding_get_int4_float(
         const void* weights, const uint32_t* index, float* dst, uint32_t len_seq,
         uint32_t embd) {
@@ -158,8 +151,8 @@ TaskSet llm_matmul_compute_int4_float(
     //! reduce the memory traffic
     auto task1 = [=](const TaskId& id) {
         for (uint32_t m = id.start; m < id.end; m++) {
-            BlockQ80* q_src1 =
-                    (BlockQ80*)(static_cast<uint8_t*>(workspace) + m * weight_q80_stride);
+            BlockQ80* q_src1 = (BlockQ80*)(static_cast<uint8_t*>(workspace) +
+                                           m * weight_q80_stride);
             quantize_row_q8_0(src1 + m * K, q_src1, K);
         }
     };
@@ -253,5 +246,6 @@ TaskSet llm_head_batched_matmul_compute_float(
     };
     return TaskSet{{task, head}};
 }
+
 }  // namespace opt
 }  // namespace inferllm

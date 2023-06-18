@@ -1,5 +1,5 @@
 #pragma once
-#if INFER_X86
+
 #include <assert.h>
 #include <immintrin.h>
 #include "common.h"
@@ -63,7 +63,7 @@ inline void quantize_row_q4_0(const float* __restrict x, void* __restrict vy, in
         // Convert int32 to int16
         i0 = _mm256_packs_epi32(
                 i0,
-                i1);  // 0, 1, 2, 3,  8, 9, 10, 11,  4, 5, 6, 7, 12, 13, 14, 15
+                i1);      // 0, 1, 2, 3,  8, 9, 10, 11,  4, 5, 6, 7, 12, 13, 14, 15
         i2 = _mm256_packs_epi32(
                 i2, i3);  // 16, 17, 18, 19,  24, 25, 26, 27,  20, 21, 22, 23,
                           // 28, 29, 30, 31 Convert int16 to int8
@@ -266,4 +266,3 @@ inline void quantize_row_q8_0(const float* __restrict x, void* __restrict vy, in
 
 }  // namespace opt
 }  // namespace inferllm
-#endif

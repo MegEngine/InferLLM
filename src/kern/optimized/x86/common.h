@@ -1,5 +1,5 @@
 #pragma once
-#if INFER_X86
+
 #include <assert.h>
 #include <immintrin.h>
 #include "core/tensor.h"
@@ -197,5 +197,3 @@ static inline v8sf exp256_ps(v8sf x) {
 
 }  // namespace opt
 }  // namespace inferllm
-
-#endif
