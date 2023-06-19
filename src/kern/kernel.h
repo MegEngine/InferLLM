@@ -11,6 +11,8 @@
 #include "kern/optimized/x86/kernel.h"
 #elif INFER_ARM
 #include "kern/optimized/arm/kernel.h"
+#elif INFER_RV64
+#include "kern/optimized/rv64/kernel.h"
 #else
 #include "kern/naive/naive.h"
 #endif
@@ -25,7 +27,11 @@ class Kernel {
 public:
     Kernel(KernelType kernel_type) : m_kernel_type(kernel_type) {}
     Kernel(KernelType kernel_type, ThreadPool* thread_pool)
-            : m_kernel_type(kernel_type), m_thread_pool(thread_pool) {}
+            : m_kernel_type(kernel_type), m_thread_pool(thread_pool) {
+#ifdef INFER_RV64
+        opt::init();
+#endif
+    }
 
     uint32_t nr_thread() const {
         if (m_thread_pool == nullptr)
