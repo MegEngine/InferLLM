@@ -297,33 +297,61 @@ TaskSet llm_rope_compute_float(
         uint32_t N, uint32_t head, uint32_t embd) {
     int ne2 = N;
     int ne1 = head;
-    int ne0 = embd;
     int mode = static_cast<int>(m);
     int n_dims = n_rot;
 
-    auto task = [=](const TaskId& id) {
-        for (int i1 = id.start; i1 < id.end; i1++) {
-            for (int i2 = (mode == 0 ? 0 : n_past); i2 < ne2; i2++) {
-                const int p = (mode == 0 ? n_past + i2 : i2);
-                for (int i0 = 0; i0 < n_dims; i0 += 2) {
-                    const double theta = pow(10000.0, ((double)-i0) / n_dims);
+    if (mode == 2) {
+        auto task = [=](const TaskId& id) {
+            int half_embd = embd / 2;
+            for (int i1 = id.start; i1 < id.end; i1++) {
+                for (int i2 = 0; i2 < ne2; i2++) {
+                    const int p = n_past + i2;
+                    for (int i0 = 0; i0 < n_dims / 2; i0++) {
+                        const double theta = pow(10000.0, ((double)-i0 * 2) / n_dims);
 
-                    const double cos_theta = cos(p * theta);
-                    const double sin_theta = sin(p * theta);
+                        const double cos_theta = cos(p * theta);
+                        const double sin_theta = sin(p * theta);
 
-                    const float* const src = src0 + i2 * head * embd + i1 * embd + i0;
-                    float* dst_data = dst + i2 * head * embd + i1 * embd + i0;
+                        const float* const src =
+                                src0 + i2 * head * embd + i1 * embd + i0;
+                        float* dst_data = dst + i2 * head * embd + i1 * embd + i0;
 
-                    double x0 = src[0];
-                    double x1 = src[1];
+                        double x0 = src[0];
+                        double x_half = src[half_embd];
 
-                    dst_data[0] = x0 * cos_theta - x1 * sin_theta;
-                    dst_data[1] = x0 * sin_theta + x1 * cos_theta;
+                        dst_data[0] = x0 * cos_theta - x_half * sin_theta;
+                        dst_data[half_embd] = x0 * sin_theta + x_half * cos_theta;
+                    }
                 }
             }
-        }
-    };
-    return TaskSet{{task, ne1}};
+        };
+        return TaskSet{{task, ne1}};
+    } else {
+        auto task = [=](const TaskId& id) {
+            for (int i1 = id.start; i1 < id.end; i1++) {
+                for (int i2 = (mode == 0 ? 0 : n_past); i2 < ne2; i2++) {
+                    const int p = (mode == 0 ? n_past + i2 : i2);
+                    for (int i0 = 0; i0 < n_dims; i0 += 2) {
+                        const double theta = pow(10000.0, ((double)-i0) / n_dims);
+
+                        const double cos_theta = cos(p * theta);
+                        const double sin_theta = sin(p * theta);
+
+                        const float* const src =
+                                src0 + i2 * head * embd + i1 * embd + i0;
+                        float* dst_data = dst + i2 * head * embd + i1 * embd + i0;
+
+                        double x0 = src[0];
+                        double x1 = src[1];
+
+                        dst_data[0] = x0 * cos_theta - x1 * sin_theta;
+                        dst_data[1] = x0 * sin_theta + x1 * cos_theta;
+                    }
+                }
+            }
+        };
+        return TaskSet{{task, ne1}};
+    }
 }
 
 TaskSet llm_glm_rope_compute_float(

@@ -13,9 +13,9 @@ cd build
 cmake ..
 make -j4
 ```
-编译完成之后在 build 目录下面有一个 chatglm_quantizer 的可执行文件，通过这个工具可以就上一步中的 chatglm-fp32.bin 模型量化为 INT4 的模型。
+编译完成之后在 build 目录下面有一个 quantizer 的可执行文件，通过这个工具可以就上一步中的 chatglm-fp32.bin 模型量化为 INT4 的模型。
 ```
-./chatglm_quantizer path/to/chatglm-fp32.bin chatglm-q4.bin
+./quantizer path/to/chatglm-fp32.bin chatglm-q4.bin
 ```
 这样就完成了 ChatGLM int4 模型的量化，下面就可以直接运行。运行模型的工具是 build 目录下面的 chatglm 可执行文件。
 
