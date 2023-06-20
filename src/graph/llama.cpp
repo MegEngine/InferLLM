@@ -68,7 +68,7 @@ void LlamaGraph::load(
     m_param = param;
 
     //! construct the llm graph with the input parameters
-    constuct_llm();
+    construct_llm();
     //! collect all the weights from the llm graph into the weights map
     collect_weights();
 
@@ -119,7 +119,7 @@ void LlamaGraph::load(
     INFER_LOG("total weight length = %lu\n", weight_length);
 }
 
-void LlamaGraph::constuct_llm() {
+void LlamaGraph::construct_llm() {
     uint32_t embd = m_param.n_embd;
     uint32_t mult = m_param.n_mult;
     uint32_t head = m_param.n_head;

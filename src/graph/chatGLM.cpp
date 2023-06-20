@@ -73,7 +73,7 @@ void ChatGLMGraph::load(
     // create the graph
     m_param.n_vocab = 130528;
     param.n_vocab = 130528;
-    constuct_llm();
+    construct_llm();
     collect_weights();
 
     fin->seek(header.tensor_offset);
@@ -119,7 +119,7 @@ void ChatGLMGraph::load(
     INFER_LOG("total weight length = %lu\n", weight_length);
 }
 
-void ChatGLMGraph::constuct_llm() {
+void ChatGLMGraph::construct_llm() {
     m_input = std::make_shared<Tensor>(device(), name() + ":input");
     std::shared_ptr<Tensor> input = m_input;
     //! embd
