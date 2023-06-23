@@ -4,6 +4,7 @@
 #include "kvstorage.h"
 #include "op.h"
 #include "tensor.h"
+#include "kern/kernel_define.h"
 
 namespace inferllm {
 
@@ -85,7 +86,7 @@ public:
             Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd, uint32_t head,
             uint32_t n_rot, uint32_t n_ctx, UserConfig model_config, Device* device,
             const std::string& name, int layer_id, bool fused_weights = false,
-            bool bias = false, bool rotary = false)
+            bool bias = false, RotMode rotary_mode = RotMode::Mode0)
             : OprModuleBase(input, device, name),
               m_embd(embd),
               m_head(head),
@@ -100,7 +101,7 @@ public:
         //! kqv-matmul
         auto v_out = add_opr<Attention>(
                 device, name, OpIOs{input}, embd, n_rot, n_ctx, head, m_kstorage.get(),
-                m_vstorage.get(), layer_id, fused_weights, bias, rotary)[0];
+                m_vstorage.get(), layer_id, fused_weights, bias, rotary_mode)[0];
         //! matmul proj
         auto proj_out = add_opr<MatMul>(
                 device, name + ".wo", OpIOs{v_out}, std::vector<size_t>{embd, embd},
@@ -151,7 +152,7 @@ public:
     HeadModule(
             Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd, uint32_t vocab,
             UserConfig model_config, Device* device, const std::string& name,
-            bool bias = false);
+            bool bias = false, float eps = 1e-5);
 
     void execute(
             WorkSpace* workspace, uint32_t nr_past, bool is_prefill = false) override;

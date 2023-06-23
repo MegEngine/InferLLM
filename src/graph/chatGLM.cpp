@@ -1,7 +1,6 @@
 #include "chatGLM.h"
 
 using namespace inferllm;
-using namespace chatglm;
 
 void ChatGLMGraph::set_weights_alias() {
     m_weights_name_aliases.clear();
@@ -143,7 +142,7 @@ void ChatGLMGraph::constuct_llm() {
         auto attention_output = add_module<AttentionModule<GlmAttention>>(
                 this, norm_out_attention, m_param.n_embd, m_param.n_head, m_param.n_rot,
                 m_param.n_ctx, model_config(), device(), name + ".attention", i,
-                true /*fused_weights*/, true /*bias*/, true /*rotary*/);
+                true /*fused_weights*/, true /*bias*/);
         //! add  norm_out_attention * scale + attention_output
         auto add_output = add_one_opr_module<Elemwise>(
                                   this, OpIOs{norm_out_attention, attention_output},

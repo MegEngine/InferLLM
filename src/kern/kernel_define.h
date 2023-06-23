@@ -44,6 +44,7 @@ enum class ElemMode {
 enum class RotMode {
     Mode0 = 0,
     Mode1,
+    ModelRotHalf,
 };
 
 enum class KernelType {

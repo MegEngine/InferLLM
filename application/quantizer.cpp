@@ -284,5 +284,5 @@ int main(int argc, char** argv) {
     finp.close();
     fout.close();
 
-    return true;
+    return 0;
 }

@@ -1,9 +1,10 @@
 
-#include "graph.h"
 #include <sys/time.h>
 #include <fstream>
 #include <regex>
 #include <vector>
+
+#include "graph.h"
 
 using namespace inferllm;
 
@@ -95,11 +96,12 @@ GlmFFNModule::GlmFFNModule(
 
 HeadModule::HeadModule(
         Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd, uint32_t vocab,
-        UserConfig model_config, Device* device, const std::string& name, bool bias)
+        UserConfig model_config, Device* device, const std::string& name, bool bias,
+        float eps)
         : OprModuleBase(input, device, name), m_embd(embd), m_graph(graph) {
     //! LayerNorm
     auto norm_out = add_opr<LayerNorm>(
-            device, name + ".norm", OpIOs{input}, m_embd, true, bias)[0];
+            device, name + ".norm", OpIOs{input}, m_embd, true, bias, true, eps)[0];
     //! matmul
     auto matmul_out = add_opr<MatMulLast>(
             device, name + ".output", OpIOs{norm_out},

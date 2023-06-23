@@ -78,5 +78,8 @@ target_link_libraries(alpaca InferLLM)
 add_executable(chatglm application/chatglm/chatglm.cpp)
 target_link_libraries(chatglm InferLLM)
 
-add_executable(chatglm_quantizer application/chatglm/quantizer.cpp)
-target_link_libraries(chatglm_quantizer InferLLM)
+add_executable(chat application/chat.cpp)
+target_link_libraries(chat InferLLM)
+
+add_executable(quantizer application/quantizer.cpp)
+target_link_libraries(quantizer InferLLM)
