@@ -6,6 +6,7 @@ project(InferLLM LANGUAGES C CXX)
 
 option(ENABLE_ASAN "Build with asan." OFF)
 option(ENABLE_PROFILE "Build with profile information." OFF)
+option(ENABLE_GPROF "Build with gprof enabled." OFF)
 option(ENABLE_DOT "Build with Arm dotprod." OFF)
 option(ENABLE_FP16 "Build with Arm FP16." OFF)
 option(ENABLE_GPU "Build with GPU." OFF)
@@ -70,6 +71,10 @@ if(CMAKE_BUILD_TYPE MATCHES "Debug")
   set(CMAKE_CXX_FLAGS " -g -O0 ${CMAKE_CXX_FLAGS}")
 else()
   set(CMAKE_CXX_FLAGS " -O3 -g ${CMAKE_CXX_FLAGS}")
+endif()
+
+if(ENABLE_GPROF)
+  set(CMAKE_CXX_FLAGS " -pg ${CMAKE_CXX_FLAGS}")
 endif()
 
 if(ENABLE_ASAN)

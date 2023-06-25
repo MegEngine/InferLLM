@@ -127,7 +127,7 @@ void sigint_handler(int signo) {
     if (signo == SIGINT) {
         printf("\n");
         printf("%s", running_summary.c_str());
-        _exit(130);
+        exit(130);
     }
 };
 #endif
