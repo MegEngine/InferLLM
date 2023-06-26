@@ -104,6 +104,13 @@ void ChatGLMGraph::load(
         std::string name(length, 0);
         fin->read_raw(&name[0], length);
         auto alias_name = get_weight_alias(name);
+        if (m_weights_map.count(alias_name) == 0) {
+            INFER_LOG("skip weight %s\n", alias_name.c_str());
+            auto dtype = convert_dtype(ftype);
+            size_t length = nr_number * dtype_in_byte(dtype) / dtype_block_size(dtype);
+            fin->skip(length);
+            continue;
+        }
         INFER_ASSERT(
                 m_weights_map.count(alias_name) == 1,
                 "Error weight is not found when loading.");
