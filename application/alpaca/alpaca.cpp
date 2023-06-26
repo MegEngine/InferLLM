@@ -238,7 +238,9 @@ int main(int argc, char** argv) {
                 input.resize(256);
                 char* buf = const_cast<char*>(input.data());
                 int n_read;
-                if (scanf("%255[^\n]%n%*c", buf, &n_read) <= 0) {
+                int res = scanf("%255[^\n]%n%*c", buf, &n_read);
+								if (res == EOF) return 0;
+								else if (res <= 0) {
                     // presumable empty line, consume the newline
                     if (scanf("%*c") <= 0) { /*ignore*/
                     }
