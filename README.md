@@ -41,6 +41,10 @@ If it is executed locally, execute `./chatglm -m chatglm-q4.bin -t 4` directly. 
 According to [x86 profiling result](./docs/profile.md), we strongly advise using 4 threads.
 
 ### Supported model
-Now InferLLM supports [ChatGLM-6B](https://github.com/THUDM/ChatGLM-6B), [llama](https://github.com/facebookresearch/llama), [alpaca](https://crfm.stanford.edu/2023/03/13/alpaca.html) models.
+Now InferLLM supports the fellowing models:
+* [ChatGLM-6B](https://github.com/THUDM/ChatGLM-6B): usage please refer to [ChatGLM](./application/chatglm/Readme.md)
+* [llama](https://github.com/facebookresearch/llama)
+* [alpaca](https://crfm.stanford.edu/2023/03/13/alpaca.html)
+* [baichuan](https://github.com/baichuan-inc/baichuan-7B) : usage please refer to [baichuan](./application/baichuan/Readme.md)
 ### License
 InferLLM is licensed under the Apache License, Version 2.0

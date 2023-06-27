@@ -28,11 +28,10 @@ struct app_params {
     int32_t top_k = 40;
     float top_p = 0.95f;
     float temp = 0.10f;
-    float repeat_penalty = 1.30f;
+    float repeat_penalty = 1.10f;
 
-    std::string model = "/home/supercb/mycode/mlsys/InferLLM/chinese-alpaca-7b-q4.bin";  // model path
+    std::string model;  // model path
 
-    bool use_color = true;          // use color to distinguish generations and inputs
     bool use_mmap = false;          // use mmap to load model
     std::string dtype = "float32";  // configure the compute dtype
     std::string mtype = "llama";    // the model type name, llama
@@ -105,8 +104,8 @@ bool app_params_parse(int argc, char** argv, app_params& params) {
             params.repeat_penalty = std::stof(argv[++i]);
         } else if (arg == "-m" || arg == "--model") {
             params.model = argv[++i];
-        } else if (arg == "--color") {
-            params.use_color = true;
+        } else if (arg == "--type") {
+            params.mtype = argv[++i];
         } else if (arg == "--mmap") {
             params.use_mmap = true;
         } else if (arg == "-h" || arg == "--help") {
@@ -160,12 +159,6 @@ int main(int argc, char** argv) {
             params.top_k, params.top_p, params.temp, params.repeat_penalty,
             params.repeat_last_n, params.seed, 2);
 
-    std::string instruct_inp =
-            " Below is an instruction that describes a task. Write a response "
-            "that appropriately completes the request.\n\n";
-    std::string prompt_inp = "### Instruction:\n\n";
-    std::string response_inp = "### Response:\n\n";
-
     // print the basic parameters
     fprintf(stderr, "%s: interactive mode on.\n", __func__);
     fprintf(stderr,
@@ -197,11 +190,46 @@ int main(int argc, char** argv) {
     };
     SetConsoleCtrlHandler(static_cast<PHANDLER_ROUTINE>(console_ctrl_handler), true);
 #endif
-
-    // prefill the model with the prompt
-    model->prefill(instruct_inp);
-
     // prompt user immediately after the starting prompt has been loaded
+    auto fix_word = [](std::string& word) {
+        auto ret = word;
+        if (word == "<n>" || word == "<n><n>")
+            word = "\n";
+        if (word == "<|tab|>")
+            word = "\t";
+        int pos = word.find("<|blank_");
+        if (pos != -1) {
+            int space_num = atoi(word.substr(8, word.size() - 10).c_str());
+            word = std::string(space_num, ' ');
+        }
+        pos = word.find("▁");
+        if (pos != -1) {
+            word.replace(pos, pos + 3, " ");
+        }
+        // Fix utf-8 garbled characters
+        if (word.length() == 6 && word[0] == '<' && word[word.length() - 1] == '>' &&
+            word[1] == '0' && word[2] == 'x') {
+            int num = std::stoi(word.substr(3, 2), nullptr, 16);
+            word = static_cast<char>(num);
+        }
+    };
+    std::string prompt_baichuan =
+            "A chat between a curious user and an artificial intelligence assistant. "
+            "The assistant gives helpful, detailed, and polite answers to the user's "
+            "questions.";
+    std::string user_baichuan = "USER:";
+    std::string assistant_baichuan = "ASSISTANT:";
+    std::string prompt, user, assistant;
+    if (params.mtype == "baichuan") {
+        prompt = prompt_baichuan;
+        user = user_baichuan;
+        assistant = assistant_baichuan;
+    }
+    if (!prompt.empty()) {
+        model->prefill(prompt);
+    }
+    printf("Model is %s: prompt is:\n%s\n", params.mtype.c_str(), prompt.c_str());
+
     bool is_interacting = true;
     std::string user_input, output;
     //! main loop
@@ -209,20 +237,22 @@ int main(int argc, char** argv) {
         if (!user_input.empty()) {
             int token;
             output = model->decode(user_input, token);
+            fix_word(output);
             user_input.clear();
             is_interacting = false;
         }
         //! continue to decod to get the next token
         if (!is_interacting) {
             int token;
-            output += model->decode_iter(token);
+            auto o = model->decode_iter(token);
+            fix_word(o);
+            output += o;
             printf("%s", output.c_str());
             fflush(stdout);
 
             // token 2 is the end of the instruction
-            if (output.empty() || output.back() == 0 || token == 2) {
+            if (token == 2) {
                 printf("\n");
-                printf("[end of text]");
                 running_summary = model->decode_summary();
                 is_interacting = true;
             }
@@ -230,7 +260,7 @@ int main(int argc, char** argv) {
             // after answering the question, get the user input again
         } else {
             printf("\n> ");
-            user_input += prompt_inp;
+            user_input += user;
             bool another_line = true;
             while (another_line) {
                 fflush(stdout);
@@ -246,18 +276,15 @@ int main(int argc, char** argv) {
                 }
                 if (n_read > 0 && buf[n_read - 1] == '\\') {
                     buf[n_read - 1] = '\n';
-                    buf[n_read] = 0;
                     another_line = true;
                     input.resize(n_read + 1);
                 } else {
-                    buf[n_read] = '\n';
-                    buf[n_read + 1] = 0;
                     another_line = false;
-                    input.resize(n_read + 2);
+                    input.resize(n_read);
                 }
                 user_input += input;
             }
-            user_input += response_inp;
+            user_input += assistant;
         }
     }
     return 0;

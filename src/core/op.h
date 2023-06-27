@@ -84,8 +84,12 @@ class LayerNorm : public OpBase {
 public:
     LayerNorm(
             Device* device, const std::string& name, OpIOs inputs, size_t embd,
-            bool mul = true, bool bias = false, bool rms = true)
-            : OpBase(device, name, inputs), m_mul(mul), m_bias(bias) {
+            bool mul = true, bool bias = false, bool rms = true, float eps = 1e-5)
+            : OpBase(device, name, inputs),
+              m_mul(mul),
+              m_bias(bias),
+              m_rms(rms),
+              m_norm_eps(eps) {
         add_outputs(std::make_shared<Tensor>(device, name + "_out0"));
         std::vector<std::shared_ptr<Tensor>> weights;
         if (m_mul) {
@@ -105,6 +109,7 @@ private:
     bool m_mul;
     bool m_bias;
     bool m_rms;
+    float m_norm_eps = 1e-5;
 };
 
 class MatMul : public OpBase {
@@ -238,7 +243,7 @@ public:
             Device* device, const std::string& name, OpIOs inputs, uint32_t embd,
             uint32_t rot, uint32_t nr_ctx, uint32_t head, KvStorage* kstorage,
             KvStorage* vstorage, uint32_t layer_id, bool fused_weights = false,
-            bool bias = false, bool rotary_weight = false)
+            bool bias = false, RotMode rotary_mode = RotMode::Mode0)
             : OpBase(device, name, inputs),
               m_embd(embd),
               m_head(head),
@@ -246,7 +251,7 @@ public:
               m_ctx(nr_ctx),
               m_fused_weights(fused_weights),
               m_bias(bias),
-              m_rotary_weights(rotary_weight),
+              m_rotary_mode(rotary_mode),
               m_kstorage(kstorage),
               m_vstorage(vstorage) {
         add_outputs(std::make_shared<Tensor>(device, name + "_out"));
@@ -282,11 +287,6 @@ public:
                 weights.push_back(bias_k);
                 weights.push_back(bias_v);
             }
-        }
-        if (m_rotary_weights) {
-            auto rotary = std::make_shared<Tensor>(device, name + ".rotary.inv_freq");
-            rotary->set_shape(std::vector<size_t>{m_head});
-            weights.push_back(rotary);
         }
         set_weights(weights);
     }
@@ -330,7 +330,7 @@ private:
     uint32_t m_ctx;
     bool m_fused_weights;
     bool m_bias;
-    bool m_rotary_weights;
+    RotMode m_rotary_mode;
     KvStorage* m_kstorage;
     KvStorage* m_vstorage;
 };
@@ -341,7 +341,7 @@ public:
             Device* device, const std::string& name, OpIOs inputs, uint32_t embd,
             uint32_t rot, uint32_t nr_ctx, uint32_t head, KvStorage* kstorage,
             KvStorage* vstorage, uint32_t layer_id, bool fused_weights = false,
-            bool bias = false, bool rotary_weight = false)
+            bool bias = false, RotMode rotary_mode = RotMode::Mode0)
             : OpBase(device, name, inputs),
               m_embd(embd),
               m_head(head),
@@ -350,7 +350,6 @@ public:
               m_layer_id(layer_id),
               m_fused_weights(fused_weights),
               m_bias(bias),
-              m_rotary_weights(rotary_weight),
               m_kstorage(kstorage),
               m_vstorage(vstorage) {
         add_outputs(std::make_shared<Tensor>(device, name + "_out"));
@@ -386,11 +385,6 @@ public:
                 weights.push_back(bias_k);
                 weights.push_back(bias_v);
             }
-        }
-        if (m_rotary_weights) {
-            auto rotary = std::make_shared<Tensor>(device, name + ".rotary.inv_freq");
-            rotary->set_shape(std::vector<size_t>{m_head});
-            weights.push_back(rotary);
         }
         set_weights(weights);
     }
@@ -437,7 +431,6 @@ private:
 
     bool m_fused_weights;
     bool m_bias;
-    bool m_rotary_weights;
     KvStorage* m_kstorage;
     KvStorage* m_vstorage;
 };

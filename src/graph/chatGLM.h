@@ -7,8 +7,6 @@
 #include "core/tensor.h"
 
 namespace inferllm {
-namespace chatglm {
-
 struct Header {
     int param_offset;
     int param_length;
@@ -25,8 +23,6 @@ struct Param {
     int fc_hidden;
     int vacab_size;
 };
-
-}  // namespace chatglm
 
 class ChatGLMGraph : public Graph {
     using Graph::Graph;

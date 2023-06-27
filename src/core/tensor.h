@@ -3,6 +3,7 @@
 #include "device.h"
 #include "file.h"
 #include "utils.h"
+
 namespace inferllm {
 
 enum class DType {
@@ -50,7 +51,7 @@ public:
 
     ~Tensor();
 
-    std::vector<size_t> shape() { return m_shape; }
+    std::vector<size_t> shape() const { return m_shape; }
 
     void set_shape(std::vector<size_t> shape, DType dtype) {
         set_shape(shape);
@@ -70,9 +71,9 @@ public:
     }
 
     void set_dtype(DType dtype) { m_dtype = dtype; }
-    DType dtype() { return m_dtype; }
+    DType dtype() const { return m_dtype; }
 
-    std::vector<size_t> stride() { return m_stride; }
+    std::vector<size_t> stride() const { return m_stride; }
 
     OpBase* owner_op() { return m_owner_op; }
     void set_owner_op(OpBase* owner_op) { m_owner_op = owner_op; }
@@ -93,18 +94,23 @@ public:
         //! uint4 and int4 data arrangement: 32 data as a blcok and share the
         //! same scale and zero
         return m_length * dtype_in_byte(m_dtype) / dtype_block_size(m_dtype);
-    };
+    }
 
     void* ptr() {
         INFER_ASSERT(is_own(), "Tensor is OutSide the device, can't get the memory.");
         return m_data;
-    };
+    }
+
+    const void* ptr() const {
+        INFER_ASSERT(is_own(), "Tensor is OutSide the device, can't get the memory.");
+        return m_data;
+    }
 
     template <typename T>
     T* ptr() {
         INFER_ASSERT(is_own(), "Tensor is OutSide the device, can't get the memory.");
         return static_cast<T*>(m_data);
-    };
+    }
 
     virtual void set_shared_memory(void* data, size_t length = 0);
 
@@ -175,7 +181,7 @@ public:
     template <typename T>
     T* ptr() {
         return static_cast<T*>(m_data);
-    };
+    }
 
     size_t length() { return m_length; }
 
@@ -185,8 +191,8 @@ public:
     }
 
 private:
-    void* m_data;
-    size_t m_length;
+    void* m_data = nullptr;
+    size_t m_length = 0;
 };
 
 }  // namespace inferllm

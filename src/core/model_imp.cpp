@@ -65,9 +65,9 @@ std::string ModelImp::decode_iter(int& token) {
 
 int32_t ModelImp::sample_and_update() {
     // sample the next token
-    auto token = llama_sample_top_p_top_k(
-            *m_vocab, m_logist.data(), m_last_queue, m_repeat_penalty, m_top_k, m_top_p,
-            m_temp, m_rng);
+   auto token = llama_sample_top_p_top_k(
+           *m_vocab, m_logist.data(), m_last_queue, m_repeat_penalty, m_top_k, m_top_p,
+           m_temp, m_rng);
     // update the last queue
     m_last_queue.push_back(token);
     m_last_queue.pop_front();

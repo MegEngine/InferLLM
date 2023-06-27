@@ -16,6 +16,7 @@ struct ModelConfig {
     std::string compt_type;
     uint32_t nr_thread;
     uint32_t nr_ctx;
+    int32_t device_id;
     bool enable_mmap;
 };
 

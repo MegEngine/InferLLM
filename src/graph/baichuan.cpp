@@ -1,78 +1,64 @@
-#include "llama.h"
-#include <iostream>
+#include "baichuan.h"
+
 using namespace inferllm;
 
-void LlamaGraph::set_weights_alias() {
+void BaiChuanGraph::set_weights_alias() {
     m_weights_name_aliases.clear();
+    // clang-format off
     m_weights_name_aliases = {
-            {"norm.weight", "head.norm.weight"},
-            {"output.weight", "head.output.weight"},
-            {"layers.x.feed_forward.w3.weight", "layers.x.ffn.w3.weight"},
-            {"layers.x.feed_forward.w2.weight", "layers.x.ffn.w2.weight"},
-            {"layers.x.feed_forward.w1.weight", "layers.x.ffn.w1.weight"},
-            {"layers.x.ffn_norm.weight", "layers.x.ffn.norm.weight"},
-            {"layers.x.attention_norm.weight", "layers.x.attention.norm.weight"},
+            {"model.embed_tokens.weight", "tok_embeddings.weight"},
+            {"model.layers.x.input_layernorm.weight", "layers.x.attention.norm.weight"},
+            {"model.layers.x.self_attn.q_proj.weight", "layers.x.attention.wq.weight"},
+            {"model.layers.x.self_attn.k_proj.weight", "layers.x.attention.wk.weight"},
+            {"model.layers.x.self_attn.v_proj.weight", "layers.x.attention.wv.weight"},
+            {"model.layers.x.self_attn.o_proj.weight", "layers.x.attention.wo.weight"},
+            {"model.layers.x.post_attention_layernorm.weight", "layers.x.ffn.norm.weight"},
+            {"model.layers.x.mlp.up_proj.weight", "layers.x.ffn.w3.weight"},
+            {"model.layers.x.mlp.down_proj.weight", "layers.x.ffn.w2.weight"},
+            {"model.layers.x.mlp.gate_proj.weight", "layers.x.ffn.w1.weight"},
+            {"model.norm.weight", "head.norm.weight"},
+            {"lm_head.weight", "head.output.weight"},
     };
+    // clang-format on
 }
 
-//! LlamaGraph
-void LlamaGraph::load(
+void BaiChuanGraph::load(
         std::shared_ptr<InputFile> fin, LlmParams& param,
         std::shared_ptr<Vocab> vocab) {
-    // verify the magic number wrote when model convert
+     // verify the magic number wrote when model convert
     uint32_t magic;
     uint32_t version = 0;
     fin->read_raw((char*)&magic, sizeof(magic));
-    if (magic != 'ggml') {
-        fin->read_raw((char*)&version, sizeof(version));
-    }
-    LlamaModelType model_type;
-    if (magic == 'ggml' && version == 0) {
-        model_type = LlamaModelType::LLAMA_FILE_VERSION_GGML;
-    } else if (magic == 'ggmf' && version == 1) {
-        model_type = LlamaModelType::LLAMA_FILE_VERSION_GGMF_V1;
-    } else if (magic == 'ggjt' && version == 1) {
-        model_type = LlamaModelType::LLAMA_FILE_VERSION_GGJT_V1;
-    } else {
-        INFER_ASSERT(0, "unsupported model type.");
-    }
+    INFER_ASSERT(magic == 0x123456, "model magic is not create!!!!");
 
-    INFER_LOG("model is %s , version = %d\n", magic != 'ggml' ? "new" : "old", version);
+    Header header;
+    // load model header
+    fin->read_raw((char*)&header.param_offset, sizeof(header.param_offset));
+    fin->read_raw((char*)&header.param_length, sizeof(header.param_length));
+    fin->read_raw((char*)&header.vocab_offset, sizeof(header.vocab_offset));
+    fin->read_raw((char*)&header.vocab_length, sizeof(header.vocab_length));
+    fin->read_raw((char*)&header.tensor_offset, sizeof(header.tensor_offset));
 
+    fin->seek(header.param_offset);
     // load param
-    fin->read_raw((char*)&param.n_vocab, sizeof(param.n_vocab));
     fin->read_raw((char*)&param.n_embd, sizeof(param.n_embd));
-    fin->read_raw((char*)&param.n_mult, sizeof(param.n_mult));
     fin->read_raw((char*)&param.n_head, sizeof(param.n_head));
     fin->read_raw((char*)&param.n_layer, sizeof(param.n_layer));
-    fin->read_raw((char*)&param.n_rot, sizeof(param.n_rot));
-    fin->read_raw((char*)&param.ftype, sizeof(param.ftype));
-    param.n_ctx = param.n_ctx;
-
-    INFER_LOG("%s: n_vocab         = %u\n", __func__, param.n_vocab);
-    INFER_LOG("%s: n_ctx           = %u\n", __func__, param.n_ctx);
-    INFER_LOG("%s: n_embd          = %u\n", __func__, param.n_embd);
-    INFER_LOG("%s: n_mult          = %u\n", __func__, param.n_mult);
-    INFER_LOG("%s: n_head          = %u\n", __func__, param.n_head);
-    INFER_LOG("%s: n_layer         = %u\n", __func__, param.n_layer);
-    INFER_LOG("%s: n_rot           = %u\n", __func__, param.n_rot);
-    INFER_LOG("%s: model ftype     = %u\n", __func__, param.ftype);
-
-    //! load vocabulary
-    if (model_type == LlamaModelType::LLAMA_FILE_VERSION_GGJT_V1) {
-        vocab->load_vocab_with_score(fin, param.n_vocab);
-    } else {
-        vocab->load_vocab(fin, param.n_vocab);
-    }
-
+    fin->read_raw((char*)&param.n_mult, sizeof(param.n_mult));
+    fin->read_raw((char*)&param.n_vocab, sizeof(param.n_vocab));
     m_param = param;
 
-    //! construct the llm graph with the input parameters
-    construct_llm();
-    //! collect all the weights from the llm graph into the weights map
+    // load vocab
+    fin->seek(header.vocab_offset);
+    vocab->load_vocab(fin, param.n_vocab);
+
+    INFER_LOG("total vocab length = %d\n", param.n_vocab);
+
+    // create the graph
+    constuct_llm();
     collect_weights();
 
-    //! read or mmap all the weights from the model file
+    fin->seek(header.tensor_offset);
     set_weights_alias();
     size_t weight_length = 0;
     while (true) {
@@ -104,11 +90,11 @@ void LlamaGraph::load(
         INFER_ASSERT(
                 m_weights_map.count(alias_name) == 1,
                 "Error weight is not found when loading.");
-        if (model_type >= LlamaModelType::LLAMA_FILE_VERSION_GGJT_V1) {
-            // skip to the next multiple of 32 bytes
-            fin->skip(-fin->tell() & 31);
-        }
         auto weight = m_weights_map[alias_name];
+        if(weight->length() != nr_number) {
+            printf("weight %s length is %lu, but model is %lu\n", alias_name.c_str(),
+                   weight->length(), nr_number);
+        }
         INFER_ASSERT(
                 weight->length() == nr_number, "Error length of weight is mismatch.");
         weight->set_file(fin, fin->tell());
@@ -119,15 +105,14 @@ void LlamaGraph::load(
     INFER_LOG("total weight length = %lu\n", weight_length);
 }
 
-void LlamaGraph::construct_llm() {
+void BaiChuanGraph::constuct_llm() {
     uint32_t embd = m_param.n_embd;
-    uint32_t mult = m_param.n_mult;
+    uint32_t ffn_size = m_param.n_mult;
     uint32_t head = m_param.n_head;
-    uint32_t rot = m_param.n_rot;
     uint32_t ctx = m_param.n_ctx;
     uint32_t n_vocab = m_param.n_vocab;
+    uint32_t rot = embd / head;
 
-    size_t nff = ((2 * (4 * embd) / 3 + mult - 1) / mult) * mult;
     m_input = std::make_shared<Tensor>(device(), name() + ":input");
     std::shared_ptr<Tensor> input = m_input;
     //! embd
@@ -139,15 +124,16 @@ void LlamaGraph::construct_llm() {
         std::string name = "layers." + std::to_string(i);
         //! layer norm
         std::shared_ptr<Tensor> attention_input = input;
-
         auto norm_out_attention = add_one_opr_module<LayerNorm>(
                                           this, OpIOs{attention_input}, device(),
                                           name + ".attention.norm")
-                                          ->add_opr(embd);
+                                          ->add_opr(
+                                                  embd, /*mul*/ true, /*bias*/ false,
+                                                  /*rms*/ true, /*eps*/ 1e-6);
         //! attentin
         auto attention_output = add_module<AttentionModule<LlamaAttention>>(
                 this, norm_out_attention, embd, head, rot, ctx, model_config(),
-                device(), name + ".attention", i);
+                device(), name + ".attention", i, false, false, RotMode::ModelRotHalf);
         //! add
         auto add_output = add_one_opr_module<Elemwise>(
                                   this, OpIOs{attention_input, attention_output},
@@ -159,10 +145,12 @@ void LlamaGraph::construct_llm() {
         auto ffn_norm_out =
                 add_one_opr_module<LayerNorm>(
                         this, OpIOs{feed_forward_input}, device(), name + ".ffn.norm")
-                        ->add_opr(embd);
+                        ->add_opr(
+                                embd, /*mul*/ true, /*bias*/ false,
+                                /*rms*/ true, /*eps*/ 1e-6);
         //! feed forward
         auto ffn_output = add_module<LlamaFFNModule>(
-                this, ffn_norm_out, embd, nff, model_config(), device(), name);
+                this, ffn_norm_out, embd, ffn_size, model_config(), device(), name);
         //! add
         input = add_one_opr_module<Elemwise>(
                         this, OpIOs{feed_forward_input, ffn_output}, device(),

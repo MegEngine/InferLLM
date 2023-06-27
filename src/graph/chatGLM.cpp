@@ -1,7 +1,6 @@
 #include "chatGLM.h"
 
 using namespace inferllm;
-using namespace chatglm;
 
 void ChatGLMGraph::set_weights_alias() {
     m_weights_name_aliases.clear();
@@ -105,6 +104,13 @@ void ChatGLMGraph::load(
         std::string name(length, 0);
         fin->read_raw(&name[0], length);
         auto alias_name = get_weight_alias(name);
+        if (m_weights_map.count(alias_name) == 0) {
+            INFER_LOG("skip weight %s\n", alias_name.c_str());
+            auto dtype = convert_dtype(ftype);
+            size_t length = nr_number * dtype_in_byte(dtype) / dtype_block_size(dtype);
+            fin->skip(length);
+            continue;
+        }
         INFER_ASSERT(
                 m_weights_map.count(alias_name) == 1,
                 "Error weight is not found when loading.");
@@ -143,7 +149,7 @@ void ChatGLMGraph::construct_llm() {
         auto attention_output = add_module<AttentionModule<GlmAttention>>(
                 this, norm_out_attention, m_param.n_embd, m_param.n_head, m_param.n_rot,
                 m_param.n_ctx, model_config(), device(), name + ".attention", i,
-                true /*fused_weights*/, true /*bias*/, true /*rotary*/);
+                true /*fused_weights*/, true /*bias*/);
         //! add  norm_out_attention * scale + attention_output
         auto add_output = add_one_opr_module<Elemwise>(
                                   this, OpIOs{norm_out_attention, attention_output},

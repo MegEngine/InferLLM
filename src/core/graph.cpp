@@ -1,9 +1,11 @@
 
-#include "graph.h"
 #include <sys/time.h>
 #include <fstream>
+#include <iostream>
 #include <regex>
 #include <vector>
+
+#include "graph.h"
 
 using namespace inferllm;
 
@@ -21,6 +23,7 @@ void OprModuleBase::execute(WorkSpace* workspace, uint32_t nr_past, bool) {
         gettimeofday(&start, NULL);
 #endif
         opr->execute(workspace, nr_past);
+
 #ifdef INFER_PROFILE
         gettimeofday(&end, NULL);
         long seconds = end.tv_sec - start.tv_sec;
@@ -95,11 +98,12 @@ GlmFFNModule::GlmFFNModule(
 
 HeadModule::HeadModule(
         Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd, uint32_t vocab,
-        UserConfig model_config, Device* device, const std::string& name, bool bias)
+        UserConfig model_config, Device* device, const std::string& name, bool bias,
+        float eps)
         : OprModuleBase(input, device, name), m_embd(embd), m_graph(graph) {
     //! LayerNorm
     auto norm_out = add_opr<LayerNorm>(
-            device, name + ".norm", OpIOs{input}, m_embd, true, bias)[0];
+            device, name + ".norm", OpIOs{input}, m_embd, true, bias, true, eps)[0];
     //! matmul
     auto matmul_out = add_opr<MatMulLast>(
             device, name + ".output", OpIOs{norm_out},
@@ -146,27 +150,31 @@ void Graph::execute(
         bool prefill) {
     if (m_input->dims() == 0 || !same_input_shape(in_token)) {
         m_input->set_shape({in_token.size()}, DType::Int32);
-        if (m_workspace->ptr()) {
-            m_device->free_device(m_workspace->ptr());
-        }
         size_t len = get_workspace_in_byte();
-        if (len > 0) {
+        if(m_workspace->ptr() == nullptr) {
+            auto data = m_device->allocate(len);
+            m_workspace->set_memory(data, len);
+        } else if (m_workspace->ptr() && len > m_workspace->length()) {
+            m_device->free_device(m_workspace->ptr());
             auto data = m_device->allocate(len);
             m_workspace->set_memory(data, len);
         }
     }
-    m_input->set_shared_memory(in_token.data(), in_token.size() * sizeof(int32_t));
-
+    m_input->resume_user_count();
+    m_input->prepare_data();
+    m_device->host2device_copy(
+            m_input->ptr(), in_token.data(), in_token.size() * sizeof(int32_t));
     INFER_ASSERT(
             m_output->length() == logist.size(),
             "output length is not match with logist size");
-    m_output->set_shared_memory(logist.data(), logist.size() * sizeof(float));
-
     for (size_t i = 0; i < m_modules.size(); i++) {
         m_modules[i]->execute(m_workspace.get(), nr_past, prefill);
     }
+    if (!prefill) {
+        m_device->device2host_copy(
+                logist.data(), m_output->ptr(), logist.size() * sizeof(float));
+    }
 }
-
 void Graph::reset_ctx() {
     for (size_t i = 0; i < m_modules.size(); i++) {
         m_modules[i]->reset_ctx();
