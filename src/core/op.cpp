@@ -7,14 +7,15 @@ using namespace inferllm;
 
 void LayerNorm::execute(WorkSpace* workspace, uint32_t nr_past) {
     std::shared_ptr<Tensor> weight = nullptr, bias = nullptr;
+    int weight_idx =0;
     if (m_mul) {
-        weight = weights()[0];
+        weight = weights()[weight_idx++];
         DType weight_type = weight->dtype();
         INFER_ASSERT(
                 weight_type == DType::Float32, "layer norm weights must be float32.");
     }
     if (m_bias) {
-        bias = weights()[1];
+        bias = weights()[weight_idx++];
     }
     auto input = inputs()[0];
     auto output = outputs()[0];
@@ -33,9 +34,11 @@ void LayerNorm::execute(WorkSpace* workspace, uint32_t nr_past) {
             bias_ptr = bias->ptr<float>();
         }
         if (m_rms) {
-            kernel->operator()<KernelID::RmsNormFloat>(src, dst, seq_len, embd);
+            kernel->operator()<KernelID::RmsNormFloat>(
+                    src, dst, seq_len, embd, m_norm_eps);
         } else {
-            kernel->operator()<KernelID::NormFloat>(src, dst, seq_len, embd);
+            kernel->operator()<KernelID::NormFloat>(
+                    src, dst, seq_len, embd, m_norm_eps);
         }
         if (weight_ptr) {
             kernel->operator()<KernelID::ElemwiseBroadcastDim0Src1Float>(

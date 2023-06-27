@@ -112,8 +112,7 @@ TaskSet llm_elemwise_broadcast_dim0_src1_compute_float(
 }
 
 TaskSet llm_rms_norm_compute_float(
-        const float* src, float* dst, uint32_t seq_len, uint32_t embd) {
-    const float eps = 1e-5f;
+        const float* src, float* dst, uint32_t seq_len, uint32_t embd, float eps) {
     auto task = [=](const TaskId& id) {
         for (uint32_t i = id.start; i < id.end; i++) {
             const float* row = src + i * embd;

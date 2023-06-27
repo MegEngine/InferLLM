@@ -175,29 +175,51 @@ private:
 template <typename Opr>
 Checker<Opr>& Checker<Opr>::exec(const TensorShapeArray& shapes) {
     //! set tensor shape
+    INFER_ASSERT(
+            shapes.size() == m_naive_values.size(),
+            "The number of input shapes is not equal to the number of inputs.");
+    INFER_ASSERT(
+            shapes.size() == m_device_values.size(),
+            "The number of input shapes is not equal to the number of inputs.");
     int index = 0;
     for (auto input : m_naive_values) {
         input->set_shape(shapes[index]);
-        input->set_dtype(m_dtype[index]);
+        if (m_dtype.find(index) != m_dtype.end()) {
+            input->set_dtype(m_dtype[index]);
+        } else {
+            input->set_dtype(DType::Float32);
+        }
         input->prepare_data();
         index++;
     }
     index = 0;
     for (auto input : m_device_values) {
         input->set_shape(shapes[index]);
-        input->set_dtype(m_dtype[index]);
+        if (m_dtype.find(index) != m_dtype.end()) {
+            input->set_dtype(m_dtype[index]);
+        } else {
+            input->set_dtype(DType::Float32);
+        }
         input->prepare_data();
         index++;
     }
     index = 0;
     for (auto weight : m_naive_weights) {
-        weight->set_dtype(m_weight_dtype[index]);
+        if (m_weight_dtype.find(index) != m_weight_dtype.end()) {
+            weight->set_dtype(m_weight_dtype[index]);
+        } else {
+            weight->set_dtype(DType::Float32);
+        }
         weight->prepare_data();
         index++;
     }
     index = 0;
     for (auto weight : m_device_weights) {
-        weight->set_dtype(m_weight_dtype[index]);
+        if (m_weight_dtype.find(index) != m_weight_dtype.end()) {
+            weight->set_dtype(m_weight_dtype[index]);
+        } else {
+            weight->set_dtype(DType::Float32);
+        }
         weight->prepare_data();
         index++;
     }

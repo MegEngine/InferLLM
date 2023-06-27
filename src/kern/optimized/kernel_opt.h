@@ -18,7 +18,7 @@ TaskSet llm_elemwise_broadcast_dim0_src1_compute_float(
         ElemMode mode);
 
 TaskSet llm_rms_norm_compute_float(
-        const float* src, float* dst, uint32_t seq_len, uint32_t embd);
+        const float* src, float* dst, uint32_t seq_len, uint32_t embd, float eps);
 
 TaskSet llm_softmax_compute_float(
         const float* src, float* dst, uint32_t len_row, uint32_t col);

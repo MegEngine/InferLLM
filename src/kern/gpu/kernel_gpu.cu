@@ -164,41 +164,7 @@ void llm_softmax_compute_float(
             len_row, src, dst, len_row, col);
 }
 
-__global__ void llm_norm_compute_float_gpu(
-        uint32_t n, const float* src, float* dst, uint32_t seq_len, uint32_t embd) {
-    CUDA_KERNEL_LOOP(i, n) {
-        const float eps = 1e-5f;
-        const float* row = src + i * embd;
-        float* out = dst + i * embd;
 
-        float mean = 0.0;
-        for (uint32_t j = 0; j < embd; j++) {
-            mean += row[j] * row[j];
-        }
-        mean /= embd;
-
-        const float scale = 1.0 / sqrt(mean + eps);
-
-        for (uint32_t j = 0; j < embd; j++) {
-            out[j] = row[j] * scale;
-        }
-    }
-}
-
-void llm_norm_compute_float(
-        const float* src, float* dst, uint32_t seq_len, uint32_t embd) {
-    // float* input = new float[seq_len * embd];
-    // cudaMemcpy(input, src, seq_len * embd * sizeof(float), cudaMemcpyDeviceToHost);
-
-    // for (int i = 0; i < seq_len * embd; i++) {
-    //     printf("dfadf  %f\n", input[i]);
-
-    //     printf("%d %d\n",seq_len*embd,i);
-    // }
-
-    llm_norm_compute_float_gpu<<<GET_BLOCKS(seq_len), CUDA_NUM_THREADS>>>(
-            seq_len, src, dst, seq_len, embd);
-}
 
 void llm_embedding_get_float_float(
         const float* weights, const uint32_t* index, float* dst, uint32_t len_seq,
@@ -263,15 +229,6 @@ void llm_embedding_get_int4_float(
 
     llm_embedding_get_int4_float_gpu<<<GET_BLOCKS(len_seq), CUDA_NUM_THREADS>>>(
             len_seq, weights, index, dst, len_seq, embd, weight_stride);
-
-    // float* output = new float[len_seq*embd];
-    // cudaMemcpy(
-    //         output, dst, len_seq * embd * sizeof(float), cudaMemcpyDeviceToHost);
-
-    // // for (int i = 0; i < len_seq * embd; i++) {
-    // //     std::cout<<output[i]<<std::endl;
-    // // }
-    // delete[] output;
 }
 
 struct SiluFunctor {
@@ -304,7 +261,6 @@ struct MulFunctor {
 
 void llm_elemwise_compute_float(
         InData<float> srcs, float* dst, size_t len, ElemMode mode) {
-    MultiThreadingTask task;
     switch (mode) {
         case ElemMode::Add: {
             const float* src0 = srcs[0];
@@ -335,9 +291,7 @@ void llm_elemwise_compute_float(
 }
 
 __global__ void llm_rms_norm_compute_float_gpu(
-        const float* src, float* dst, uint32_t seq_len, uint32_t embd) {
-    const float eps = 1e-5f;
-
+        const float* src, float* dst, uint32_t seq_len, uint32_t embd, float eps) {
     CUDA_KERNEL_LOOP(i, seq_len) {
         const float* row = src + i * embd;
         float* out = dst + i * embd;
@@ -352,30 +306,48 @@ __global__ void llm_rms_norm_compute_float_gpu(
 
         for (uint32_t j = 0; j < embd; j++) {
             out[j] = row[j] * scale;
-            // printf("%f\n", output[i]);
         }
     }
 }
 
 void llm_rms_norm_compute_float(
-        const float* src, float* dst, uint32_t seq_len, uint32_t embd) {
-    float* input = new float[seq_len * embd];
-    cudaMemcpy(input, src, seq_len * embd * sizeof(float), cudaMemcpyDeviceToHost);
-
-    // for (int i = 0; i < seq_len * embd; i++) {
-    //     printf("dfadf  %f\n", input[i]);
-    // }
-    delete[] input;
+        const float* src, float* dst, uint32_t seq_len, uint32_t embd, float eps) {
     llm_rms_norm_compute_float_gpu<<<GET_BLOCKS(seq_len), CUDA_NUM_THREADS>>>(
-            src, dst, seq_len, embd);
+            src, dst, seq_len, embd, eps);
+}
 
-    float* output = new float[seq_len * embd];
-    cudaMemcpy(output, dst, seq_len * embd * sizeof(float), cudaMemcpyDeviceToHost);
+__global__ void llm_norm_compute_float_gpu(
+        uint32_t n, const float* src, float* dst, uint32_t seq_len, uint32_t embd,
+        float eps) {
+    CUDA_KERNEL_LOOP(i, n) {
+        const float* row = src + i * embd;
+        float* out = dst + i * embd;
 
-    for (int i = 0; i < seq_len * embd; i++) {
-        // printf("%f\n", output[i]);
+        float mean = 0.0;
+        for (uint32_t j = 0; j < embd; j++) {
+            mean += row[j];
+        }
+        mean /= embd;
+
+        float sum2 = 0.0;
+        for (uint32_t j = 0; j < embd; j++) {
+            float v = row[j] - mean;
+            out[j] = v;
+            sum2 += v * v;
+        }
+
+        const float scale = 1.0 / sqrt(sum2 / embd + eps);
+
+        for (uint32_t j = 0; j < embd; j++) {
+            out[j] = out[j] * scale;
+        }
     }
-    delete[] output;
+}
+
+void llm_norm_compute_float(
+        const float* src, float* dst, uint32_t seq_len, uint32_t embd, float eps) {
+    llm_norm_compute_float_gpu<<<GET_BLOCKS(seq_len), CUDA_NUM_THREADS>>>(
+            seq_len, src, dst, seq_len, embd, eps);
 }
 
 __global__ void llm_rope_compute_float_gpu(
@@ -647,60 +619,15 @@ __global__ void llm_scale_diag_mask_inf_float_gpu(
 }
 /**
  * dst :head *seq * (seq +nr_past)
- *
- *
  */
-
-void llm_scale_diag_mask_inf_float_cpu(
-        float* dst, const float* src0, float scale, uint32_t n_past, uint32_t seqlen,
-        uint32_t head) {
-    const int nc = n_past + seqlen;
-    const int nr = seqlen;
-    const int nz = head;
-
-    for (int k = 0; k < head; k++) {
-        for (int j = 0; j < seqlen; j++) {
-            for (uint32_t i = 0; i < nc; i++) {
-                uint32_t index = k * nc * nr + j * nc + i;
-                if (i > n_past + j) {
-                    dst[index] = -INFINITY;
-                } else {
-                    dst[index] = src0[index] * scale;
-                }
-            }
-        }
-    }
-}
 
 void llm_scale_diag_mask_inf_float(
         float* dst, const float* src0, float scale, uint32_t n_past, uint32_t seqlen,
         uint32_t head) {
     uint32_t count = head * seqlen * (n_past + seqlen);
 
-    float* src_cpu = new float[count];
-    float* dst_cpu = new float[count];
-
-    cudaMemcpy(src_cpu, src0, count * sizeof(float), cudaMemcpyDeviceToHost);
-
-    llm_scale_diag_mask_inf_float_cpu(dst_cpu, src_cpu, scale, n_past, seqlen, head);
-
     llm_scale_diag_mask_inf_float_gpu<<<GET_BLOCKS(count), CUDA_NUM_THREADS>>>(
             count, dst, src0, scale, n_past, seqlen, head);
-
-    float* gpu_dst = new float[count];
-
-    cudaMemcpy(gpu_dst, dst, count * sizeof(float), cudaMemcpyDeviceToHost);
-
-    // for (int i = 0; i < count; i++) {
-    //     if (dst_cpu[i] != gpu_dst[i]) {
-    //         // printf("error\n");
-    //         printf("%f %f\n", dst_cpu[i], gpu_dst[i]);
-    //     }
-    // }
-
-    delete[] src_cpu;
-    delete[] dst_cpu;
-    delete[] gpu_dst;
 }
 
 __global__ void llm_diag_mask_inf_float_gpu(
@@ -719,49 +646,14 @@ void llm_diag_mask_inf_float(
         float* dst, const float* src0, uint32_t n_past, uint32_t N, uint32_t head) {
     uint32_t count = head * N * (N + n_past);
 
-    float* src_cpu = new float[count];
-    float* dst_cpu = new float[count];
-
-    cudaMemcpy(src_cpu, src0, count * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(dst_cpu, dst, count * sizeof(float), cudaMemcpyDeviceToHost);
-
-    llm_scale_diag_mask_inf_float_cpu(dst_cpu, src_cpu, 1.0, n_past, N, head);
-
     llm_diag_mask_inf_float_gpu<<<GET_BLOCKS(count), CUDA_NUM_THREADS>>>(
             count, dst, src0, n_past, N, head);
-
-    float* gpu_dst = new float[count];
-
-    cudaMemcpy(gpu_dst, dst, count * sizeof(float), cudaMemcpyDeviceToHost);
-
-    // for (int i = 0; i < count; i++) {
-    //     printf("fuck\n");
-    //     if (dst_cpu[i] != gpu_dst[i]) {
-    //         printf("error\n");
-    //     }
-    // }
-
-    delete[] src_cpu;
-    delete[] dst_cpu;
-    delete[] gpu_dst;
 }
+
 void llm_permute_compute_float(
         float* dst, const float* src0, uint32_t dim0, uint32_t dim1, uint32_t dim2,
         std::vector<uint32_t> param) {
-    uint32_t axis0 = param[0];
-    uint32_t axis1 = param[1];
-    uint32_t axis2 = param[2];
-
-    if (axis0 == 1 && axis1 == 0 && axis2 == 2) {
-        for (int i0 = 0; i0 < dim0; i0++) {
-            for (int i1 = 0; i1 < dim1; i1++) {
-                const float* p_src = src0 + (i0 * dim1 + i1) * dim2;
-                float* p_dst = dst + (i1 * dim0 + i0) * dim2;
-                cudaMemcpy(
-                        p_dst, p_src, dim2 * sizeof(float), cudaMemcpyDeviceToDevice);
-            }
-        }
-    }
+    return;
 }
 /**
  * dst :head *seqlen *(seql)
