@@ -55,7 +55,7 @@ void BaiChuanGraph::load(
     INFER_LOG("total vocab length = %d\n", param.n_vocab);
 
     // create the graph
-    constuct_llm();
+    construct_llm();
     collect_weights();
 
     fin->seek(header.tensor_offset);
@@ -105,7 +105,7 @@ void BaiChuanGraph::load(
     INFER_LOG("total weight length = %lu\n", weight_length);
 }
 
-void BaiChuanGraph::constuct_llm() {
+void BaiChuanGraph::construct_llm() {
     uint32_t embd = m_param.n_embd;
     uint32_t ffn_size = m_param.n_mult;
     uint32_t head = m_param.n_head;

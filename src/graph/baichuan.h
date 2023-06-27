@@ -10,7 +10,7 @@ class BaiChuanGraph : public Graph {
 
 public:
     void set_weights_alias() override;
-    void constuct_llm() override;
+    void construct_llm() override;
     uint32_t get_nr_ctx() override { return m_param.n_ctx; }
     uint32_t get_nr_vocab() override { return m_param.n_vocab; }
     void load(
