@@ -254,7 +254,7 @@ public:
 
     virtual uint32_t get_nr_vocab() = 0;
 
-    virtual void constuct_llm() = 0;
+    virtual void construct_llm() = 0;
 
     virtual void set_weights_alias(){};
 
