@@ -42,6 +42,7 @@ According to [x86 profiling result](./docs/profile.md), we strongly advise using
 
 ### Supported model
 Now InferLLM supports the fellowing models:
+* [ChatGLM2-6B](https://github.com/THUDM/ChatGLM2-6B): usage please refer to [ChatGLM](./application/chatglm/Readme.md)
 * [ChatGLM-6B](https://github.com/THUDM/ChatGLM-6B): usage please refer to [ChatGLM](./application/chatglm/Readme.md)
 * [llama](https://github.com/facebookresearch/llama)
 * [alpaca](https://crfm.stanford.edu/2023/03/13/alpaca.html)

@@ -47,6 +47,7 @@ from sentencepiece import SentencePieceProcessor
 # parse arguments
 parser = argparse.ArgumentParser(description="Convert a ChatGLM model to a InferLLM compatible fp16 data type file")
 parser.add_argument("-o", "--outfile", type=str, help="the output file")
+parser.add_argument("-v", "--version", type=int, default=1, help="the chatglm mode version")
 args = parser.parse_args()
 
 # output in the same directory as the model
@@ -58,17 +59,28 @@ hparams = {
         "n_layers": 28,
         "fc_hidden": 16384,
 }
+dtype = 0
+version = args.version
+if version == 1:
+    model = AutoModel.from_pretrained("THUDM/chatglm-6b", trust_remote_code=True).float().state_dict()
+    auto_tokenizer = AutoTokenizer.from_pretrained("THUDM/chatglm-6b", trust_remote_code=True)
+elif version == 2:
+    model = AutoModel.from_pretrained("THUDM/chatglm2-6b", trust_remote_code=True).float().state_dict()
+    auto_tokenizer = AutoTokenizer.from_pretrained("THUDM/chatglm2-6b", trust_remote_code=True)
 
-model = AutoModel.from_pretrained("THUDM/chatglm-6b", trust_remote_code=True).float().state_dict()
-dtype = 0 #1 = float16
-
-auto_tokenizer = AutoTokenizer.from_pretrained("THUDM/chatglm-6b", trust_remote_code=True)
 _, vocab_file = tempfile.mkstemp()
 auto_tokenizer.save_vocabulary(vocab_file)
 tokenizer = SentencePieceProcessor(vocab_file)
 
 hparams.update({"vocab_size": tokenizer.vocab_size()})
+
+if version == 2:
+    hparams.update({"multi_qeury": 1})
+    hparams.update({"attention_patition": 2})
+    hparams.update({"fc_hidden": 13696})
+
 print(hparams)
+
 
 fout = open(model_out_path, "wb")
 fout.write(struct.pack("i", 0x0123456)) # magic: inferllm
@@ -79,6 +91,9 @@ param_byte +=struct.pack("i", hparams["n_heads"])
 param_byte +=struct.pack("i", hparams["n_layers"])
 param_byte +=struct.pack("i", hparams["fc_hidden"])
 param_byte +=struct.pack("i", hparams["vocab_size"])
+if version == 2:
+    param_byte +=struct.pack("i", hparams["multi_qeury"])
+    param_byte +=struct.pack("i", hparams["attention_patition"])
 
 # Is this correct??
 vocab_byte = bytearray()
@@ -145,7 +160,8 @@ for k, v in model.items():
 
     print("Processing variable: " + name + " with shape: ", shape, " and type: ", v.dtype)
     if name.endswith("query_key_value.weight") or name.endswith("attention.query_key_value.bias"):
-        v = v.reshape(32, 3, -1).transpose(0, 1).reshape(-1, 4096)
+        if version == 1:
+            v = v.reshape(32, 3, -1).transpose(0, 1).reshape(-1, 4096)
 
     data = v.numpy().squeeze()
     n_dims = len(data.shape)

@@ -26,7 +26,11 @@ enum class KernelID {
     MatmulInt4Float,
     MatmulFloatFloat,
     MatmulWithHeadStrideFloat,
+    //! multi query attention, q*kT
+    MatmulWithHeadStrideQBroadCastKFloat,
     HeadBatchedMatmulFloat,
+    //! multi query attention
+    HeadBatchedMatmulBroadCastVFloat,
     RopeFloat,
     GlmRopeFloat,
     ScaleDiagMaskFloat,

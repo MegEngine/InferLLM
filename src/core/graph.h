@@ -10,6 +10,8 @@ namespace inferllm {
 
 //! TODO: redefine this member of the struct
 struct LlmParams {
+    bool is_multi_query = false;
+    int32_t multi_query_group_num = 1;
     int32_t n_vocab;
     int32_t n_embd;
     int32_t n_mult;
@@ -86,43 +88,38 @@ public:
             Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd, uint32_t head,
             uint32_t n_rot, uint32_t n_ctx, UserConfig model_config, Device* device,
             const std::string& name, int layer_id, bool fused_weights = false,
-            bool bias = false, RotMode rotary_mode = RotMode::Mode0)
+            bool bias = false, RotMode rotary_mode = RotMode::Mode0,
+            bool same_bias = true)
             : OprModuleBase(input, device, name),
               m_embd(embd),
               m_head(head),
               m_rot(n_rot),
               m_graph(graph) {
         INFER_ASSERT(embd % head == 0, "Embedding and head is not match.");
-        m_index = 0;
-        m_kstorage = make_unique<KvStorage>(
-                std::vector<size_t>{n_ctx, embd}, model_config.compt_type, device);
-        m_vstorage = make_unique<KvStorage>(
-                std::vector<size_t>{n_ctx, embd}, model_config.compt_type, device);
+
         //! kqv-matmul
-        auto v_out = add_opr<Attention>(
-                device, name, OpIOs{input}, embd, n_rot, n_ctx, head, m_kstorage.get(),
-                m_vstorage.get(), layer_id, fused_weights, bias, rotary_mode)[0];
+        m_attention_op = std::make_shared<Attention>(
+                device, name, OpIOs{input}, embd, n_rot, n_ctx, head, layer_id,
+                model_config.compt_type, fused_weights, bias, rotary_mode);
+        oprs().push_back(m_attention_op);
+        auto v_out = m_attention_op->outputs()[0];
         //! matmul proj
+        bool proj_bias = same_bias ? bias : !bias;
         auto proj_out = add_opr<MatMul>(
                 device, name + ".wo", OpIOs{v_out}, std::vector<size_t>{embd, embd},
-                bias)[0];
+                proj_bias)[0];
         set_output(proj_out);
     }
 
-    void reset_ctx() override {
-        m_kstorage->reset_id();
-        m_vstorage->reset_id();
-    }
+    void reset_ctx() override { m_attention_op->reset_ctx(); }
 
 private:
     uint32_t m_embd;
     uint32_t m_head;
     uint32_t m_rot;
-    uint32_t m_index;
-
     Graph* m_graph;
-    std::unique_ptr<KvStorage> m_kstorage;
-    std::unique_ptr<KvStorage> m_vstorage;
+
+    std::shared_ptr<Attention> m_attention_op;
 };
 
 class LlamaFFNModule : public OprModuleBase {
@@ -139,6 +136,17 @@ private:
 class GlmFFNModule : public OprModuleBase {
 public:
     GlmFFNModule(
+            Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd, uint32_t mult,
+            UserConfig model_config, Device* device, const std::string& name);
+
+private:
+    uint32_t m_embd;
+    Graph* m_graph;
+};
+
+class Glm2FFNModule : public OprModuleBase {
+public:
+    Glm2FFNModule(
             Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd, uint32_t mult,
             UserConfig model_config, Device* device, const std::string& name);
 
@@ -240,6 +248,10 @@ public:
 
     void collect_weights();
 
+    virtual void load_param(
+            std::shared_ptr<InputFile> fin, LlmParams& param,
+            std::shared_ptr<Vocab> vocab) {}
+
     std::string get_weight_alias(const std::string& name);
 
     static DType convert_dtype(int32_t type);
@@ -248,11 +260,7 @@ public:
 
     virtual void load(
             std::shared_ptr<InputFile> fin, LlmParams& param,
-            std::shared_ptr<Vocab> vocab) = 0;
-
-    virtual uint32_t get_nr_ctx() = 0;
-
-    virtual uint32_t get_nr_vocab() = 0;
+            std::shared_ptr<Vocab> vocab);
 
     virtual void construct_llm() = 0;
 
@@ -260,11 +268,16 @@ public:
 
     virtual void post_tokenize(std::vector<Vocab::Id>& input) {}
 
+    uint32_t get_nr_ctx() { return m_param.n_ctx; }
+    uint32_t get_nr_vocab() { return m_param.n_vocab; }
+
     std::shared_ptr<Tensor> m_input;
     std::shared_ptr<Tensor> m_output;
     std::unordered_map<std::string, std::shared_ptr<Tensor>> m_weights_map;
     std::unordered_map<std::string, std::string> m_weights_name_aliases;
     std::vector<std::shared_ptr<OprModuleBase>> m_modules;
+
+    LlmParams m_param;
 
 private:
     std::string m_name;

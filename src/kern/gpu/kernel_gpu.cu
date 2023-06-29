@@ -795,5 +795,13 @@ void llm_glm_rope_compute_float(
     //     }
     // };
 }
+
+void llm_matmul_compute_with_head_strideq_broadcastk_float(
+        float* dst, const float* srck, const float* srcq, uint32_t seqlen,
+        uint32_t embd, uint32_t head, uint32_t query_group_num, uint32_t nr_past) {}
+
+void llm_head_batched_matmul_broadcastv_float(
+        float* dst, const float* v, const float* qk, uint32_t seqlen, uint32_t embd,
+        uint32_t head, uint32_t query_group_num, uint32_t nr_past) {}
 }  // namespace gpu
 }  // namespace inferllm

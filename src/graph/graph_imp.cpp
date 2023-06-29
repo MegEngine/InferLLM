@@ -9,6 +9,8 @@ std::shared_ptr<Graph> Graph::make_graph(
         return std::make_shared<LlamaGraph>(model_config, device, name);
     } else if (name == "chatglm") {
         return std::make_shared<ChatGLMGraph>(model_config, device, name);
+    } else if (name == "chatglm2") {
+        return std::make_shared<ChatGLMGraph2>(model_config, device, name);
     } else if (name == "baichuan") {
         return std::make_shared<BaiChuanGraph>(model_config, device, name);
     } else {

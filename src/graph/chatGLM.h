@@ -22,6 +22,8 @@ struct Param {
     int embd_dim;
     int fc_hidden;
     int vacab_size;
+    int multi_query = 0;
+    int multi_query_group_num = 1;
 };
 
 class ChatGLMGraph : public Graph {
@@ -30,14 +32,22 @@ class ChatGLMGraph : public Graph {
 public:
     void set_weights_alias() override;
     void construct_llm() override;
-    uint32_t get_nr_ctx() override { return m_param.n_ctx; }
-    uint32_t get_nr_vocab() override { return m_param.n_vocab; }
-    void load(
+    void load_param(
             std::shared_ptr<InputFile> fin, LlmParams& param,
             std::shared_ptr<Vocab> vocab) override;
     void post_tokenize(std::vector<Vocab::Id>& input) override;
+};
 
-private:
-    LlmParams m_param;
+class ChatGLMGraph2 : public Graph {
+    using Graph::Graph;
+
+public:
+    void set_weights_alias() override;
+    void construct_llm() override;
+    void load_param(
+            std::shared_ptr<InputFile> fin, LlmParams& param,
+            std::shared_ptr<Vocab> vocab) override;
+
+    void post_tokenize(std::vector<Vocab::Id>& input) override;
 };
 }  // namespace inferllm

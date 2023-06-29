@@ -4,49 +4,34 @@ using namespace inferllm;
 
 void ChatGLMGraph::set_weights_alias() {
     m_weights_name_aliases.clear();
+    // clang-format off
     m_weights_name_aliases = {
             {"transformer.word_embeddings.weight", "tok_embeddings.weight"},
-            {"transformer.layers.x.input_layernorm.weight",
-             "layers.x.attention_norm.weight"},
-            {"transformer.layers.x.input_layernorm.bias",
-             "layers.x.attention_norm.bias"},
-            {"transformer.layers.x.attention.rotary_emb.inv_freq",
-             "layers.x.attention.rotary.inv_freq"},
-            {"transformer.layers.x.attention.query_key_value.weight",
-             "layers.x.attention.wqkv.weight"},
-            {"transformer.layers.x.attention.query_key_value.bias",
-             "layers.x.attention.wqkv.bias"},
-            {"transformer.layers.x.attention.dense.weight",
-             "layers.x.attention.wo.weight"},
+            {"transformer.layers.x.input_layernorm.weight", "layers.x.attention_norm.weight"},
+            {"transformer.layers.x.input_layernorm.bias", "layers.x.attention_norm.bias"},
+            {"transformer.layers.x.attention.rotary_emb.inv_freq", "layers.x.attention.rotary.inv_freq"},
+            {"transformer.layers.x.attention.query_key_value.weight", "layers.x.attention.wqkv.weight"},
+            {"transformer.layers.x.attention.query_key_value.bias", "layers.x.attention.wqkv.bias"},
+            {"transformer.layers.x.attention.dense.weight", "layers.x.attention.wo.weight"},
             {"transformer.layers.x.attention.dense.bias", "layers.x.attention.wo.bias"},
-            {"transformer.layers.x.post_attention_layernorm.weight",
-             "layers.x.ffn_norm.weight"},
-            {"transformer.layers.x.post_attention_layernorm.bias",
-             "layers.x.ffn_norm.bias"},
-            {"transformer.layers.x.mlp.dense_h_to_4h.weight",
-             "layers.x.ffn.matmul1.weight"},
-            {"transformer.layers.x.mlp.dense_h_to_4h.bias",
-             "layers.x.ffn.matmul1.bias"},
-            {"transformer.layers.x.mlp.dense_4h_to_h.weight",
-             "layers.x.ffn.matmul2.weight"},
-            {"transformer.layers.x.mlp.dense_4h_to_h.bias",
-             "layers.x.ffn.matmul2.bias"},
+            {"transformer.layers.x.post_attention_layernorm.weight", "layers.x.ffn_norm.weight"},
+            {"transformer.layers.x.post_attention_layernorm.bias", "layers.x.ffn_norm.bias"},
+            {"transformer.layers.x.mlp.dense_h_to_4h.weight", "layers.x.ffn.matmul1.weight"},
+            {"transformer.layers.x.mlp.dense_h_to_4h.bias", "layers.x.ffn.matmul1.bias"},
+            {"transformer.layers.x.mlp.dense_4h_to_h.weight", "layers.x.ffn.matmul2.weight"},
+            {"transformer.layers.x.mlp.dense_4h_to_h.bias", "layers.x.ffn.matmul2.bias"},
             {"transformer.final_layernorm.weight", "head.norm.weight"},
             {"transformer.final_layernorm.bias", "head.norm.bias"},
             {"lm_head.weight", "head.output.weight"},
             {"lm_head.bias", "head.output.bias"},
     };
+    // clang-format on
 }
 
 //! LlamaGraph
-void ChatGLMGraph::load(
+void ChatGLMGraph::load_param(
         std::shared_ptr<InputFile> fin, LlmParams& param,
         std::shared_ptr<Vocab> vocab) {
-    // verify the magic number wrote when model convert
-    uint32_t magic;
-    uint32_t version = 0;
-    fin->read_raw((char*)&magic, sizeof(magic));
-    INFER_ASSERT(magic == 0x123456, "model magic is not create!!!!");
 
     Header header;
     // load model header
@@ -72,57 +57,7 @@ void ChatGLMGraph::load(
     // create the graph
     m_param.n_vocab = 130528;
     param.n_vocab = 130528;
-    construct_llm();
-    collect_weights();
-
     fin->seek(header.tensor_offset);
-    set_weights_alias();
-    size_t weight_length = 0;
-    while (true) {
-        int32_t n_dims;
-        int32_t length;
-        int32_t ftype;
-        if (fin->eof()) {
-            break;
-        }
-
-        fin->read_raw(reinterpret_cast<char*>(&n_dims), sizeof(n_dims));
-        fin->read_raw(reinterpret_cast<char*>(&length), sizeof(length));
-        fin->read_raw(reinterpret_cast<char*>(&ftype), sizeof(ftype));
-
-        if (fin->eof()) {
-            break;
-        }
-
-        size_t nr_number = 1;
-        int32_t shape[2] = {1, 1};
-        for (int i = 0; i < n_dims; ++i) {
-            fin->read_raw(reinterpret_cast<char*>(&shape[i]), sizeof(shape[i]));
-            nr_number *= shape[i];
-        }
-
-        std::string name(length, 0);
-        fin->read_raw(&name[0], length);
-        auto alias_name = get_weight_alias(name);
-        if (m_weights_map.count(alias_name) == 0) {
-            INFER_LOG("skip weight %s\n", alias_name.c_str());
-            auto dtype = convert_dtype(ftype);
-            size_t length = nr_number * dtype_in_byte(dtype) / dtype_block_size(dtype);
-            fin->skip(length);
-            continue;
-        }
-        INFER_ASSERT(
-                m_weights_map.count(alias_name) == 1,
-                "Error weight is not found when loading.");
-        auto weight = m_weights_map[alias_name];
-        INFER_ASSERT(
-                weight->length() == nr_number, "Error length of weight is mismatch.");
-        weight->set_file(fin, fin->tell());
-        weight->set_dtype(convert_dtype(ftype));
-        fin->skip(weight->length_in_byte());
-        weight_length += weight->length_in_byte();
-    }
-    INFER_LOG("total weight length = %lu\n", weight_length);
 }
 
 void ChatGLMGraph::construct_llm() {

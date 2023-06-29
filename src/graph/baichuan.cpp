@@ -22,15 +22,9 @@ void BaiChuanGraph::set_weights_alias() {
     // clang-format on
 }
 
-void BaiChuanGraph::load(
+void BaiChuanGraph::load_param(
         std::shared_ptr<InputFile> fin, LlmParams& param,
         std::shared_ptr<Vocab> vocab) {
-     // verify the magic number wrote when model convert
-    uint32_t magic;
-    uint32_t version = 0;
-    fin->read_raw((char*)&magic, sizeof(magic));
-    INFER_ASSERT(magic == 0x123456, "model magic is not create!!!!");
-
     Header header;
     // load model header
     fin->read_raw((char*)&header.param_offset, sizeof(header.param_offset));
@@ -53,56 +47,7 @@ void BaiChuanGraph::load(
     vocab->load_vocab(fin, param.n_vocab);
 
     INFER_LOG("total vocab length = %d\n", param.n_vocab);
-
-    // create the graph
-    construct_llm();
-    collect_weights();
-
     fin->seek(header.tensor_offset);
-    set_weights_alias();
-    size_t weight_length = 0;
-    while (true) {
-        int32_t n_dims;
-        int32_t length;
-        int32_t ftype;
-        if (fin->eof()) {
-            break;
-        }
-
-        fin->read_raw(reinterpret_cast<char*>(&n_dims), sizeof(n_dims));
-        fin->read_raw(reinterpret_cast<char*>(&length), sizeof(length));
-        fin->read_raw(reinterpret_cast<char*>(&ftype), sizeof(ftype));
-
-        if (fin->eof()) {
-            break;
-        }
-
-        size_t nr_number = 1;
-        int32_t shape[2] = {1, 1};
-        for (int i = 0; i < n_dims; ++i) {
-            fin->read_raw(reinterpret_cast<char*>(&shape[i]), sizeof(shape[i]));
-            nr_number *= shape[i];
-        }
-
-        std::string name(length, 0);
-        fin->read_raw(&name[0], length);
-        auto alias_name = get_weight_alias(name);
-        INFER_ASSERT(
-                m_weights_map.count(alias_name) == 1,
-                "Error weight is not found when loading.");
-        auto weight = m_weights_map[alias_name];
-        if(weight->length() != nr_number) {
-            printf("weight %s length is %lu, but model is %lu\n", alias_name.c_str(),
-                   weight->length(), nr_number);
-        }
-        INFER_ASSERT(
-                weight->length() == nr_number, "Error length of weight is mismatch.");
-        weight->set_file(fin, fin->tell());
-        weight->set_dtype(convert_dtype(ftype));
-        fin->skip(weight->length_in_byte());
-        weight_length += weight->length_in_byte();
-    }
-    INFER_LOG("total weight length = %lu\n", weight_length);
 }
 
 void BaiChuanGraph::construct_llm() {

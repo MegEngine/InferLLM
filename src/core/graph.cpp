@@ -85,7 +85,7 @@ GlmFFNModule::GlmFFNModule(
     //! matmul0
     auto matmul_out1 = add_opr<MatMul>(
             device, name + ".ffn.matmul1", OpIOs{input},
-            std::vector<size_t>{mult, embd}, true)[0];
+            std::vector<size_t>{mult, embd})[0];
     //! gelu activation
     auto gelu_out = add_opr<Elemwise>(
             device, name + ".gelu", OpIOs{matmul_out1}, ElemMode::Gelu)[0];
@@ -93,6 +93,24 @@ GlmFFNModule::GlmFFNModule(
     auto matmul_out2 = add_opr<MatMul>(
             device, name + ".ffn.matmul2", OpIOs{gelu_out},
             std::vector<size_t>{embd, mult}, true)[0];
+    set_output(matmul_out2);
+}
+
+Glm2FFNModule::Glm2FFNModule(
+        Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd, uint32_t mult,
+        UserConfig model_config, Device* device, const std::string& name)
+        : OprModuleBase(input, device, name), m_embd(embd), m_graph(graph) {
+    //! matmul0
+    auto matmul_out1 = add_opr<MatMul>(
+            device, name + ".ffn.matmul1", OpIOs{input},
+            std::vector<size_t>{mult * 2, embd}, false)[0];
+    //! gelu activation
+    auto gelu_out = add_opr<SpliteHalfActiveMul>(
+            device, name + ".silu", OpIOs{matmul_out1}, ElemMode::Silu)[0];
+    //! matmul2
+    auto matmul_out2 = add_opr<MatMul>(
+            device, name + ".ffn.matmul2", OpIOs{gelu_out},
+            std::vector<size_t>{embd, mult}, false)[0];
     set_output(matmul_out2);
 }
 
@@ -243,4 +261,69 @@ Graph::~Graph() {
 bool Graph::same_input_shape(std::vector<int32_t> in_token) {
     INFER_ASSERT(m_input->dims() == 1, "input tensor should be one dim.");
     return m_input->shape()[0] == in_token.size();
+}
+
+void Graph::load(
+        std::shared_ptr<InputFile> fin, LlmParams& param,
+        std::shared_ptr<Vocab> vocab) {
+    // verify the magic number wrote when model convert
+    uint32_t magic;
+    uint32_t version = 0;
+    fin->read_raw((char*)&magic, sizeof(magic));
+    INFER_ASSERT(magic == 0x123456, "model magic is not create!!!!");
+    load_param(fin, param, vocab);
+
+    construct_llm();
+    collect_weights();
+
+    set_weights_alias();
+    size_t weight_length = 0;
+    while (true) {
+        int32_t n_dims;
+        int32_t length;
+        int32_t ftype;
+        if (fin->eof()) {
+            break;
+        }
+
+        fin->read_raw(reinterpret_cast<char*>(&n_dims), sizeof(n_dims));
+        fin->read_raw(reinterpret_cast<char*>(&length), sizeof(length));
+        fin->read_raw(reinterpret_cast<char*>(&ftype), sizeof(ftype));
+
+        if (fin->eof()) {
+            break;
+        }
+
+        size_t nr_number = 1;
+        int32_t shape[2] = {1, 1};
+        for (int i = 0; i < n_dims; ++i) {
+            fin->read_raw(reinterpret_cast<char*>(&shape[i]), sizeof(shape[i]));
+            nr_number *= shape[i];
+        }
+
+        std::string name(length, 0);
+        fin->read_raw(&name[0], length);
+        auto alias_name = get_weight_alias(name);
+        if (m_weights_map.count(alias_name) == 0) {
+            INFER_LOG("skip weight %s\n", alias_name.c_str());
+            auto dtype = convert_dtype(ftype);
+            size_t length = nr_number * dtype_in_byte(dtype) / dtype_block_size(dtype);
+            fin->skip(length);
+            continue;
+        }
+        INFER_ASSERT(
+                m_weights_map.count(alias_name) == 1,
+                "Error weight is not found when loading.");
+        auto weight = m_weights_map[alias_name];
+        if (weight->length() != nr_number) {
+            INFER_LOG("weight %s is not match.\n", alias_name.c_str());
+        }
+        INFER_ASSERT(
+                weight->length() == nr_number, "Error length of weight is mismatch.");
+        weight->set_file(fin, fin->tell());
+        weight->set_dtype(convert_dtype(ftype));
+        fin->skip(weight->length_in_byte());
+        weight_length += weight->length_in_byte();
+    }
+    INFER_LOG("total weight length = %lu\n", weight_length);
 }

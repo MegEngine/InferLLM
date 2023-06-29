@@ -483,6 +483,36 @@ TaskSet llm_permute_compute_float(
     return TaskSet{{task, 1}};
 }
 
+TaskSet llm_matmul_compute_with_head_strideq_broadcastk_float(
+        float* dst, const float* srck, const float* srcq, uint32_t seqlen,
+        uint32_t embd, uint32_t head, uint32_t query_group_num, uint32_t nr_past) {
+    uint32_t sub_embd = embd / head;
+    uint32_t length = nr_past + seqlen;
+    uint32_t line_stride = embd;
+    uint32_t stride_k = query_group_num * sub_embd;
+    uint32_t head_pre_group = head / query_group_num;
+    auto task = [=](const TaskId& id) {
+        for (uint32_t h = id.start; h < id.end; h++) {
+            auto dst_head = dst + h * seqlen * (nr_past + seqlen);
+            auto srck_head = srck + h / head_pre_group * sub_embd;
+            auto srcq_head = srcq + h * sub_embd;
+            for (uint32_t row = 0; row < seqlen; row++) {
+                auto p_srcq = srcq_head + row * line_stride;
+                for (uint32_t len = 0; len < length; len++) {
+                    auto p_dst = dst_head + row * length + len;
+                    auto p_srck = srck_head + len * stride_k;
+                    float sum = 0;
+                    for (uint32_t k = 0; k < sub_embd; k++) {
+                        sum += p_srck[k] * p_srcq[k];
+                    }
+                    *p_dst = sum;
+                }
+            }
+        }
+    };
+    return TaskSet{{task, head}};
+}
+
 TaskSet llm_matmul_compute_with_head_stride_float(
         float* dst, const float* srck, const float* srcq, uint32_t seqlen,
         uint32_t embd, uint32_t head, uint32_t nr_past) {
@@ -502,6 +532,36 @@ TaskSet llm_matmul_compute_with_head_stride_float(
                     float sum = 0;
                     for (uint32_t k = 0; k < sub_embd; k++) {
                         sum += p_srck[k] * p_srcq[k];
+                    }
+                    *p_dst = sum;
+                }
+            }
+        }
+    };
+    return TaskSet{{task, head}};
+}
+
+TaskSet llm_head_batched_matmul_broadcastv_float(
+        float* dst, const float* v, const float* qk, uint32_t seqlen, uint32_t embd,
+        uint32_t head, uint32_t query_group_num, uint32_t nr_past) {
+    uint32_t sub_embd = embd / head;
+    uint32_t length = nr_past + seqlen;
+    uint32_t line_stride = embd;
+    uint32_t stride_v = sub_embd * query_group_num;
+    uint32_t head_pre_group = head / query_group_num;
+    auto task = [=](const TaskId& id) {
+        for (uint32_t h = id.start; h < id.end; h++) {
+            float* dst_head = dst + h * sub_embd;
+            const float* v_head = v + h / head_pre_group * sub_embd;
+            const float* qk_head = qk + h * seqlen * length;
+            for (uint32_t row = 0; row < seqlen; row++) {
+                auto p_qk = qk_head + row * length;
+                for (uint32_t len = 0; len < sub_embd; len++) {
+                    auto p_dst = dst_head + row * line_stride + len;
+                    auto p_v = v_head + len;
+                    float sum = 0;
+                    for (uint32_t k = 0; k < length; k++) {
+                        sum += p_v[k * stride_v] * p_qk[k];
                     }
                     *p_dst = sum;
                 }

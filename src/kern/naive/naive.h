@@ -70,9 +70,17 @@ TaskSet llm_permute_compute_float(
         float* dst, const float* src0, uint32_t dim0, uint32_t dim1, uint32_t dim2,
         std::vector<uint32_t> param);
 
+TaskSet llm_matmul_compute_with_head_strideq_broadcastk_float(
+        float* dst, const float* srck, const float* srcq, uint32_t seqlen,
+        uint32_t embd, uint32_t head, uint32_t query_group_num, uint32_t nr_past);
+
 TaskSet llm_matmul_compute_with_head_stride_float(
         float* dst, const float* srck, const float* srcq, uint32_t seqlen,
         uint32_t embd, uint32_t head, uint32_t nr_past);
+
+TaskSet llm_head_batched_matmul_broadcastv_float(
+        float* dst, const float* v, const float* qk, uint32_t seqlen, uint32_t embd,
+        uint32_t head, uint32_t query_group_num, uint32_t nr_past);
 
 TaskSet llm_head_batched_matmul_compute_float(
         float* dst, const float* v, const float* qk, uint32_t seqlen, uint32_t embd,
@@ -108,6 +116,13 @@ PartialImplementKernel(GlmRopeFloat, llm_glm_rope_compute_float);
 PartialImplementKernel(ScaleDiagMaskFloat, llm_scale_diag_mask_inf_float);
 PartialImplementKernel(GlmGmask, llm_glm_gmask_inf_float);
 PartialImplementKernel(PermuteFloat, llm_permute_compute_float);
+
+//! multi query attention
+PartialImplementKernel(
+        MatmulWithHeadStrideQBroadCastKFloat,
+        llm_matmul_compute_with_head_strideq_broadcastk_float);
+PartialImplementKernel(
+        HeadBatchedMatmulBroadCastVFloat, llm_head_batched_matmul_broadcastv_float);
 
 PartialImplementSpace(MatmulInt4Float, llm_matmul_get_workspace_float);
 PartialImplementSpace(MatmulFloatFloat, llm_matmul_get_workspace_float_float);

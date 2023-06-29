@@ -38,47 +38,27 @@ struct app_params {
 };
 
 void app_print_usage(int argc, char** argv, const app_params& params) {
+    // clang-format off
     fprintf(stderr, "usage: %s [options]\n", argv[0]);
     fprintf(stderr, "\n");
     fprintf(stderr, "options:\n");
     fprintf(stderr, "  -h, --help            show this help message and exit\n");
-    fprintf(stderr,
-            "  --color               colorise output to distinguish prompt and user "
-            "input from generations\n");
+    fprintf(stderr, "  --color               colorise output to distinguish prompt and user input from generations\n");
     fprintf(stderr, "  -s SEED, --seed SEED  RNG seed (default: -1)\n");
-    fprintf(stderr,
-            "  -t N, --threads N     number of threads to use during computation "
-            "(default: %d)\n",
-            params.n_threads);
-    fprintf(stderr, "  --top_k N             top-k sampling (default: %d)\n",
-            params.top_k);
-    fprintf(stderr, "  --top_p N             top-p sampling (default: %.1f)\n",
-            params.top_p);
-    fprintf(stderr,
-            "  --repeat_last_n N     last n tokens to consider for penalize (default: "
-            "%d)\n",
-            params.repeat_last_n);
-    fprintf(stderr,
-            "  --repeat_penalty N    penalize repeat sequence of tokens (default: "
-            "%.1f)\n",
-            params.repeat_penalty);
-    fprintf(stderr,
-            "  -c N, --ctx_size N    size of the prompt context (default: %d)\n",
-            params.n_ctx);
-    fprintf(stderr, "  --temp N              temperature (default: %.1f)\n",
-            params.temp);
+    fprintf(stderr, "  -t N, --threads N     number of threads to use during computation (default: %d)\n", params.n_threads);
+    fprintf(stderr, "  --top_k N             top-k sampling (default: %d)\n", params.top_k);
+    fprintf(stderr, "  --top_p N             top-p sampling (default: %.1f)\n", params.top_p);
+    fprintf(stderr, "  --repeat_last_n N     last n tokens to consider for penalize (default: %d)\n", params.repeat_last_n);
+    fprintf(stderr, "  --repeat_penalty N    penalize repeat sequence of tokens (default: %.1f)\n", params.repeat_penalty);
+    fprintf(stderr, "  -c N, --ctx_size N    size of the prompt context (default: %d)\n", params.n_ctx);
+    fprintf(stderr, "  --temp N              temperature (default: %.1f)\n", params.temp);
     fprintf(stderr, "  -m FNAME, --model FNAME\n");
-    fprintf(stderr, "                        model path (default: %s)\n",
-            params.model.c_str());
-    fprintf(stderr,
-            "  --mmap                enable mmap when read weights, default = false\n");
-    fprintf(stderr,
-            "  -d type               configure the compute type, default float32, can "
-            "be float32 and flot16 now.\n");
-    fprintf(stderr,
-            "  --model_type type     the model type name, default llama, can only be "
-            "llama now.\n");
+    fprintf(stderr, "                        model path (default: %s)\n", params.model.c_str());
+    fprintf(stderr, "  --mmap                enable mmap when read weights, default = false\n");
+    fprintf(stderr, "  -d type               configure the compute type, default float32, can be float32 and flot16 now.\n");
+    fprintf(stderr, "  --model_type type     the model type name, default llama, can only be llama now.\n");
     fprintf(stderr, "\n");
+    // clang-format on
 }
 
 bool app_params_parse(int argc, char** argv, app_params& params) {
@@ -226,9 +206,9 @@ int main(int argc, char** argv) {
         assistant = assistant_baichuan;
     }
     if (!prompt.empty()) {
+        printf("Model is %s: prompt is:\n%s\n", params.mtype.c_str(), prompt.c_str());
         model->prefill(prompt);
     }
-    printf("Model is %s: prompt is:\n%s\n", params.mtype.c_str(), prompt.c_str());
 
     bool is_interacting = true;
     std::string user_input, output;
