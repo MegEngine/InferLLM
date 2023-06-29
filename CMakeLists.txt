@@ -74,7 +74,11 @@ else()
 endif()
 
 if(ENABLE_GPROF)
-  set(CMAKE_CXX_FLAGS " -pg ${CMAKE_CXX_FLAGS}")
+  CHECK_CXX_COMPILER_FLAG("-pg" HAS_GPROF)
+  message(WARNING "Build with gprof: ${HAS_GPROF}. Gprof may not work on darwin.")
+  if(HAS_GPROF)
+    set(CMAKE_CXX_FLAGS " -pg ${CMAKE_CXX_FLAGS}")
+  endif()
 endif()
 
 if(ENABLE_ASAN)
