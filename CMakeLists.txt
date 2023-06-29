@@ -74,6 +74,7 @@ else()
 endif()
 
 if(ENABLE_GPROF)
+	include(CheckCXXCompilerFlag)
   CHECK_CXX_COMPILER_FLAG("-pg" HAS_GPROF)
   message(WARNING "Build with gprof: ${HAS_GPROF}. Gprof may not work on darwin.")
   if(HAS_GPROF)
