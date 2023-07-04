@@ -262,7 +262,9 @@ int main(int argc, char** argv) {
                 }
                 user_input += input;
             }
-            user_input += "\n\n答：";
+            if (params.version == 2) {
+                user_input += "\n\n答：";
+            }
         }
         iter++;
     }

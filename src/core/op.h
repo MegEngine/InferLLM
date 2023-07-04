@@ -322,7 +322,7 @@ public:
         m_vstorage->prepare_data_with_length(token_len);
     }
 
-    virtual void execute(WorkSpace* workspace, uint32_t nr_past) = 0;
+    virtual void execute(WorkSpace* workspace, uint32_t nr_past) override = 0;
 
     void end_execute() override {
         for (auto weight : weights()) {

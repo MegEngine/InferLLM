@@ -85,7 +85,7 @@ GlmFFNModule::GlmFFNModule(
     //! matmul0
     auto matmul_out1 = add_opr<MatMul>(
             device, name + ".ffn.matmul1", OpIOs{input},
-            std::vector<size_t>{mult, embd})[0];
+            std::vector<size_t>{mult, embd}, true)[0];
     //! gelu activation
     auto gelu_out = add_opr<Elemwise>(
             device, name + ".gelu", OpIOs{matmul_out1}, ElemMode::Gelu)[0];

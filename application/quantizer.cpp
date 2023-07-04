@@ -108,13 +108,13 @@ int main(int argc, char** argv) {
     if (!finp) {
         fprintf(stderr, "%s: failed to open '%s' for reading\n", __func__,
                 inp_model.c_str());
-        return false;
+        return 1;
     }
     auto fout = std::ofstream(out_model, std::ios::binary);
     if (!fout) {
         fprintf(stderr, "%s: failed to open '%s' for writing\n", __func__,
                 out_model.c_str());
-        return false;
+        return 1;
     }
 
     // load model header
@@ -123,7 +123,7 @@ int main(int argc, char** argv) {
     if (magic != 0x0123456) {
         fprintf(stderr, "%s: invalid model file '%s' (bad magic)\n", __func__,
                 inp_model.c_str());
-        return false;
+        return 1;
     }
     fout.write((char*)&magic, sizeof(magic));
 
@@ -208,7 +208,7 @@ int main(int argc, char** argv) {
                             "%s: unsupported ftype %d for integer "
                             "quantization\n",
                             __func__, ftype);
-                    return false;
+                    return 1;
                 }
                 if (ftype == 1) {
                     data_f16.resize(nelements);

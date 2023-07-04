@@ -16,7 +16,7 @@
 #endif
 
 #ifdef ENABLE_GPU
-#include "kern/optimized/gpu/kernel_gpu.h"
+#include "kern/gpu/kernel_gpu.h"
 #endif
 
 namespace inferllm {
