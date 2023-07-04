@@ -1,5 +1,5 @@
 #pragma once
-#if INFER_ARM
+
 #include <assert.h>
 #include "arm_neon.h"
 
@@ -114,4 +114,3 @@ inline void quantize_row_q8_0(const float* __restrict x, void* __restrict vy, in
 
 }  // namespace opt
 }  // namespace inferllm
-#endif

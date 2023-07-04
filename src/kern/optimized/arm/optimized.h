@@ -1,5 +1,5 @@
 #pragma once
-#if INFER_ARM
+
 #include <assert.h>
 #include "arm_neon.h"
 #include "kern/kernel_define.h"
@@ -217,5 +217,3 @@ inline float vec_vec_dot_q40_with_q80(
 
 }  // namespace opt
 }  // namespace inferllm
-
-#endif

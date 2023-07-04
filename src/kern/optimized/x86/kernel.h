@@ -1,4 +1,5 @@
 #pragma once
+
 #include "kern/naive/naive.h"
 #include "math.h"
 #include "string.h"
@@ -39,58 +40,16 @@ TaskSet llm_head_batched_matmul_compute_float(
         float* dst, const float* v, const float* qk, uint32_t seqlen, uint32_t embd,
         uint32_t head, uint32_t nr_past);
 
-template <KernelID Id, typename... Args>
-struct Comp {
-    static TaskSet get_all_task(Args... args) {
-        //! if arm not implement, fallback to naive
-        return naive::Comp<Id, Args...>::get_all_task(std::forward<Args>(args)...);
-    }
-};
-
-template <KernelID Id, typename... Args>
-struct Space {
-    //! if arm not implement, fallback to naive
-    static size_t get(Args... args) {
-        return naive::Space<Id, Args...>::get(std::forward<Args>(args)...);
-    }
-};
-
-#ifdef PartialImplementKernel
-#undef PartialImplementKernel
-#endif
-#ifdef PartialImplementSpace
-#undef PartialImplementSpace
-#endif
-
-#define PartialImplementKernel(kernel_id, fun)       \
-    template <typename... Args>                      \
-    struct Comp<KernelID::kernel_id, Args...> {      \
-        static TaskSet get_all_task(Args... args) {  \
-            return fun(std::forward<Args>(args)...); \
-        }                                            \
-    };
-
-#define PartialImplementSpace(kernel_id, fun)                                        \
-    template <typename... Args>                                                      \
-    struct Space<KernelID::kernel_id, Args...> {                                     \
-        static size_t get(Args... args) { return fun(std::forward<Args>(args)...); } \
-    };
-
 PartialImplementKernel(ElemwiseFloat, llm_elemwise_compute_float);
 PartialImplementKernel(
         ElemwiseBroadcastDim0Src1Float, llm_elemwise_broadcast_dim0_src1_compute_float);
 PartialImplementKernel(RmsNormFloat, llm_rms_norm_compute_float);
 PartialImplementKernel(EmbeddingGetInt4Float, llm_embedding_get_int4_float);
-// PartialImplementKernel(SoftmaxFloat, llm_softmax_compute_float);
 PartialImplementKernel(MatmulInt4Float, llm_matmul_compute_int4_float);
 PartialImplementKernel(
         MatmulWithHeadStrideFloat, llm_matmul_compute_with_head_stride_float);
 PartialImplementKernel(HeadBatchedMatmulFloat, llm_head_batched_matmul_compute_float);
-
 PartialImplementSpace(MatmulInt4Float, llm_matmul_get_workspace_float);
-
-#undef PartialImplementKernel
-#undef PartialImplementSpace
 
 }  // namespace opt
 }  // namespace inferllm

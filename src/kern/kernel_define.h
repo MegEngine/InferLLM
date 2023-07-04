@@ -76,3 +76,19 @@ struct BlockQ80 {
     int8_t qs[QK80];  // nibbles
 };
 }  // namespace inferllm
+
+#define PartialImplementKernel(kernel_id, fun)       \
+    template <typename... Args>                      \
+    struct Comp<KernelID::kernel_id, Args...> {      \
+        static TaskSet get_all_task(Args... args) {  \
+            return fun(std::forward<Args>(args)...); \
+        }                                            \
+    };
+
+#define PartialImplementSpace(kernel_id, fun)        \
+    template <typename... Args>                      \
+    struct Space<KernelID::kernel_id, Args...> {     \
+        static size_t get(Args... args) {            \
+            return fun(std::forward<Args>(args)...); \
+        }                                            \
+    };

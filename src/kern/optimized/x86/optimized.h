@@ -1,5 +1,5 @@
 #pragma once
-#if INFER_X86
+
 #include <assert.h>
 #include <immintrin.h>
 #include "common.h"
@@ -928,5 +928,3 @@ inline void comput_matmul_with_dst_uncontinue(
 
 }  // namespace opt
 }  // namespace inferllm
-
-#endif
