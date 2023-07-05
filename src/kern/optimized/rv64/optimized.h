@@ -82,37 +82,6 @@ inline void comput_matmul_with_dst_uncontinue(
         }
     }
     return;
-    size_t lmul = mk_lmul(E32, length);
-    size_t vt32 = mk_vtype(E32, lmul);
-    for (uint32_t row = 0; row < seqlen; row++) {
-        for (uint32_t len = 0; len < K; len++) {
-            auto p_qk = srcqk + row * length;
-            auto p_dst = dst + row * offset_dst + len;
-            auto p_v = srcv + len;
-            VSET1(e32, m1);
-            asm volatile("vmv.s.x v0, x0\n");
-            for (size_t sz = length; sz > 0;) {
-                int vl;
-                asm volatile(
-                        "vsetvl        %[vl], %[sz], %[vt32]\n"
-                        "vlswu.v       v8,  (%[x]), %[stride]\n"
-                        "vlwu.v        v16, (%[y])\n"
-                        "vfmul.vv      v8, v8, v16\n"
-                        "vfredmax.vs   v0, v8, v0\n"
-                        : [vl] "=r"(vl)
-                        : [sz] "r"(sz), [vt32] "r"(vt32), [x] "r"(p_v),
-                          [stride] "r"(offset_v * 4), [y] "r"(p_qk)
-                        : "memory");
-                p_v += vl * offset_v;
-                p_qk += vl;
-                sz -= vl;
-            }
-            float sum;
-            VSET1(e32, m1);
-            asm volatile("vfmv.f.s %[init], v0\n" : [init] "=f"(sum));
-            *p_dst = sum;
-        }
-    }
 }
 
 }  // namespace opt
