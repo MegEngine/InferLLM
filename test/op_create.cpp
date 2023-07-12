@@ -89,5 +89,30 @@ void Checker<LayerNorm>::create_opr(
     m_device_output = m_device_opr->outputs()[0];
 }
 
+template <>
+template <>
+void Checker<MatMul>::create_opr(size_t N, size_t K, bool bias) {
+    m_naive_values.clear();
+    m_device_values.clear();
+    auto naive_input = std::make_shared<Tensor>(m_naive_device, "naive_input");
+    auto device_input = std::make_shared<Tensor>(m_device, "device_input");
+
+    m_device_opr = std::make_shared<MatMul>(
+            m_device, "device_opr", OpIOs{device_input}, std::vector<size_t>{N, K},
+            bias);
+    m_naive_opr = std::make_shared<MatMul>(
+            m_naive_device, "naive_opr", OpIOs{naive_input}, std::vector<size_t>{N, K},
+            bias);
+
+    m_naive_values.push_back(naive_input);
+    m_device_values.push_back(device_input);
+
+    m_device_weights = m_device_opr->weights();
+    m_naive_weights = m_naive_opr->weights();
+
+    m_naive_output = m_naive_opr->outputs()[0];
+    m_device_output = m_device_opr->outputs()[0];
+}
+
 }  // namespace test
 }  // namespace inferllm

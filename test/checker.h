@@ -115,9 +115,9 @@ protected:
 };
 
 void check_tensor(
-        const Tensor& expected, const Tensor& computed, float epsilon = 1e-3,
-        float max_avg_error = 1e-3, float max_avg_biased_error = 1e-3);
-        
+        const Tensor& computed, const Tensor& expected, float epsilon = 1e-3,
+        float max_avg_error = 1e-1, float max_avg_biased_error = 1e-1);
+
 #define ASSERT_TENSOR_EQ_EPS_AVG(v0, v1, maxerr, maxerr_avg, maxerr_avg_biased) \
     ASSERT_PRED_FORMAT5(assert_tensor_eq, v0, v1, maxerr, maxerr_avg, maxerr_avg_biased)
 

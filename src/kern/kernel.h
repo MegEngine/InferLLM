@@ -45,7 +45,7 @@ public:
         //! parallel to execute tasks
         if (m_kernel_type == KernelType::GPU) {
 #if ENABLE_GPU
-            gpu::Comp<Id, Args...>::exec(std::forward<Args>(args)...);
+            gpu::Comp<Id, Args...>::exec(std::forward<Args>(args)..., m_handle);
 #endif
 
         } else {
@@ -64,8 +64,8 @@ public:
     ThreadPool* m_thread_pool;
     KernelType m_kernel_type;
 #if ENABLE_GPU
-    void set_stream(cudaStream_t stream) { m_stream = stream; }
-    cudaStream_t m_stream;
+    void set_handle(cudaHandle* handle) { m_handle = handle; }
+    cudaHandle* m_handle;
 #endif
 };
 

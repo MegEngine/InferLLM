@@ -50,3 +50,23 @@ TEST_F(GPU, TestLayerNorm) {
         }
     }
 }
+
+TEST_F(GPU, TestMatMul) {
+    Checker<MatMul> checker(device(), naive_device());
+    checker.set_epsilon(1e-2);
+    size_t K = 128;
+    for (DType dtype : {DType::Int4, DType::Float32}) {
+        checker.set_weight_dtype(0, dtype);
+        if (dtype == DType::Int4) {
+            checker.set_epsilon(5e-1);
+        }
+        for (bool bias : {false, true}) {
+            for (size_t N : {2, 128}) {
+                checker.create_opr(N, K, bias);
+                for (size_t M : {1, 4}) {
+                    checker.exec({TensorShape{M, K}});
+                }
+            }
+        }
+    }
+}

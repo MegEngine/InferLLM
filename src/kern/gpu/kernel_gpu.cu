@@ -4,6 +4,9 @@
 #include <fstream>
 #include <iostream>
 #include <vector>
+
+#define ENABLE_GPU 1
+
 #include "core/tensor.h"
 #include "kern/kernel.h"
 #include "kernel_gpu.h"
@@ -20,38 +23,8 @@ namespace gpu {
 
 constexpr int kBlockSize = 256;
 constexpr int kNumWaves = 32;
+constexpr int DequantizedBlockSize = 256;
 const int CUDA_NUM_THREADS = 512;
-
-inline cudaError_t GetNumBlocks(int64_t n, int* num_blocks) {
-    int dev;
-    {
-        cudaError_t err = cudaGetDevice(&dev);
-        if (err != cudaSuccess) {
-            return err;
-        }
-    }
-    int sm_count;
-    {
-        cudaError_t err =
-                cudaDeviceGetAttribute(&sm_count, cudaDevAttrMultiProcessorCount, dev);
-        if (err != cudaSuccess) {
-            return err;
-        }
-    }
-    int tpm;
-    {
-        cudaError_t err = cudaDeviceGetAttribute(
-                &tpm, cudaDevAttrMaxThreadsPerMultiProcessor, dev);
-        if (err != cudaSuccess) {
-            return err;
-        }
-    }
-    *num_blocks = std::max<int>(
-            1, std::min<int64_t>(
-                       (n + kBlockSize - 1) / kBlockSize,
-                       sm_count * tpm / kBlockSize * kNumWaves));
-    return cudaSuccess;
-}
 
 inline int GET_BLOCKS(const int N) {
     return (N + CUDA_NUM_THREADS - 1) / CUDA_NUM_THREADS;
@@ -77,17 +50,8 @@ __global__ void llm_elemwise_broadcast_dim0_src1_compute_float_mul_gpu(
 
 void llm_elemwise_broadcast_dim0_src1_compute_float(
         const float* src0, const float* src1, float* dst, uint32_t len0, uint32_t len1,
-        ElemMode mode) {
+        ElemMode mode, cudaHandle* handle) {
     uint32_t count = len0 * len1;
-    // float* input = new float[count];
-
-    // cudaMemcpy(input, src0, count * sizeof(float), cudaMemcpyDeviceToHost);
-
-    // for (int i = 0; i < count; i++) {
-    //     printf("input %f\n", input[i]);
-    // }
-
-    // delete[] input;
     switch (mode) {
         case ElemMode::Add: {
             llm_elemwise_broadcast_dim0_src1_compute_float_add_gpu<<<
@@ -116,13 +80,7 @@ __global__ void ApplyFunction(Function functor, int64_t n, float* ret, Args... a
 
 template <typename Function, typename... Args>
 cudaError_t LaunchKernel(Function fun, int64_t n, float* ret, Args... args) {
-    int num_blocks;
-    {
-        cudaError_t err = GetNumBlocks(n, &num_blocks);
-        if (err != cudaSuccess) {
-            return err;
-        }
-    }
+    int num_blocks = (n + kBlockSize - 1) / kBlockSize;
     ApplyFunction<Function, Args...><<<num_blocks, kBlockSize>>>(fun, n, ret, args...);
     return cudaPeekAtLastError();
 }
@@ -159,16 +117,15 @@ __global__ void llm_softmax_compute_float_gpu(
 }
 
 void llm_softmax_compute_float(
-        const float* src, float* dst, uint32_t len_row, uint32_t col) {
+        const float* src, float* dst, uint32_t len_row, uint32_t col,
+        cudaHandle* handle) {
     llm_softmax_compute_float_gpu<<<GET_BLOCKS(len_row), CUDA_NUM_THREADS>>>(
             len_row, src, dst, len_row, col);
 }
 
-
-
 void llm_embedding_get_float_float(
         const float* weights, const uint32_t* index, float* dst, uint32_t len_seq,
-        uint32_t embd) {
+        uint32_t embd, cudaHandle* handle) {
     std::vector<uint32_t> cpu_index(len_seq);
     cudaMemcpy(
             cpu_index.data(), index, len_seq * sizeof(uint32_t),
@@ -182,53 +139,37 @@ void llm_embedding_get_float_float(
     }
 }
 
-__device__ void dequantize_row_q4_0_reference_gpu(
-        const void* __restrict x, float* __restrict y, int k) {
-    const int nb = k / QK40;
-    const size_t bs = sizeof(float) + QK40 / 2;
-
-    const uint8_t* __restrict pd = ((const uint8_t*)x + 0 * bs);
-    const uint8_t* __restrict pb = ((const uint8_t*)x + 0 * bs + sizeof(float));
-
-    // scalar
-    for (int i = 0; i < nb; i++) {
-        const float d = *(const float*)(pd + i * bs);
-
-        const uint8_t* __restrict pp = pb + i * bs;
-
-        for (int l = 0; l < QK40; l += 2) {
-            const uint8_t vi = pp[l / 2];
-
-            const int8_t vi0 = vi & 0xf;
-            const int8_t vi1 = vi >> 4;
-
-            const float v0 = (vi0 - 8) * d;
-            const float v1 = (vi1 - 8) * d;
-
-            y[i * QK40 + l + 0] = v0;
-            y[i * QK40 + l + 1] = v1;
-        }
-    }
-}
-
 __global__ void llm_embedding_get_int4_float_gpu(
-        uint32_t n, const void* weights, const uint32_t* index, float* dst,
-        uint32_t len_seq, uint32_t embd, const int weight_stride) {
-    CUDA_KERNEL_LOOP(i, n) {
-        const int row = index[i];
-        dequantize_row_q4_0_reference_gpu(
-                (static_cast<const char*>(weights) + row * weight_stride),
-                dst + i * embd, embd);
+        const void* weights, const uint32_t* index, float* dst, uint32_t len_seq,
+        uint32_t embd, const int weight_stride) {
+    int seq_id = blockIdx.y;
+    int thread_id = threadIdx.x + blockIdx.x * blockDim.x;
+    if (thread_id < embd / 2) {
+        uint32_t row = index[seq_id];
+        dst = dst + seq_id * embd;
+        const void* src = (static_cast<const char*>(weights) + row * weight_stride);
+        int q40_block_id = thread_id * 2 / QK40;
+        int block_offset = thread_id % (QK40 / 2);
+        BlockQ40* q40_block = (BlockQ40*)src + q40_block_id;
+        float scale = q40_block->d;
+        uint8_t value = q40_block->qs[block_offset];
+        const int8_t v1 = value & 0xf;
+        const int8_t v2 = value >> 4;
+        dst[thread_id * 2] = (v1 - 8) * scale;
+        dst[thread_id * 2 + 1] = (v2 - 8) * scale;
     }
 }
 
 void llm_embedding_get_int4_float(
         const void* weights, const uint32_t* index, float* dst, uint32_t len_seq,
-        uint32_t embd) {
+        uint32_t embd, cudaHandle* handle) {
     const int weight_stride = embd * sizeof(BlockQ40) / QK40;
-
-    llm_embedding_get_int4_float_gpu<<<GET_BLOCKS(len_seq), CUDA_NUM_THREADS>>>(
-            len_seq, weights, index, dst, len_seq, embd, weight_stride);
+    // one thread compute two data
+    int grid_1 = (embd / 2 + DequantizedBlockSize - 1) / DequantizedBlockSize;
+    dim3 grid(grid_1, len_seq);
+    cudaStream_t stream = handle->stream;
+    llm_embedding_get_int4_float_gpu<<<grid, DequantizedBlockSize, 0, stream>>>(
+            weights, index, dst, len_seq, embd, weight_stride);
 }
 
 struct SiluFunctor {
@@ -260,7 +201,7 @@ struct MulFunctor {
 };
 
 void llm_elemwise_compute_float(
-        InData<float> srcs, float* dst, size_t len, ElemMode mode) {
+        InData<float> srcs, float* dst, size_t len, ElemMode mode, cudaHandle* handle) {
     switch (mode) {
         case ElemMode::Add: {
             const float* src0 = srcs[0];
@@ -311,7 +252,8 @@ __global__ void llm_rms_norm_compute_float_gpu(
 }
 
 void llm_rms_norm_compute_float(
-        const float* src, float* dst, uint32_t seq_len, uint32_t embd, float eps) {
+        const float* src, float* dst, uint32_t seq_len, uint32_t embd, float eps,
+        cudaHandle* handle) {
     llm_rms_norm_compute_float_gpu<<<GET_BLOCKS(seq_len), CUDA_NUM_THREADS>>>(
             src, dst, seq_len, embd, eps);
 }
@@ -345,7 +287,8 @@ __global__ void llm_norm_compute_float_gpu(
 }
 
 void llm_norm_compute_float(
-        const float* src, float* dst, uint32_t seq_len, uint32_t embd, float eps) {
+        const float* src, float* dst, uint32_t seq_len, uint32_t embd, float eps,
+        cudaHandle* handle) {
     llm_norm_compute_float_gpu<<<GET_BLOCKS(seq_len), CUDA_NUM_THREADS>>>(
             seq_len, src, dst, seq_len, embd, eps);
 }
@@ -389,7 +332,7 @@ __global__ void llm_rope_compute_float_gpu(
 
 void llm_rope_compute_float_cpu(
         float* dst, const float* src0, uint32_t n_past, uint32_t n_rot, RotMode m,
-        uint32_t seqlen, uint32_t head, uint32_t embd) {
+        uint32_t seqlen, uint32_t head, uint32_t embd, cudaHandle* handle) {
     int ne2 = seqlen;
     // int ne1 = head;
     // int ne0 = embd;
@@ -419,14 +362,11 @@ void llm_rope_compute_float_cpu(
 }
 void llm_rope_compute_float(
         float* dst, const float* src0, uint32_t n_past, uint32_t n_rot, RotMode m,
-        uint32_t seqlen, uint32_t head, uint32_t embd) {
+        uint32_t seqlen, uint32_t head, uint32_t embd, cudaHandle* handle) {
     uint32_t count = seqlen * head * (n_rot / 2);
-
 
     llm_rope_compute_float_gpu<<<GET_BLOCKS(count), CUDA_NUM_THREADS>>>(
             count, dst, src0, n_past, n_rot, m, seqlen, head, embd);
-
-
 }
 
 __global__ void llm_elemwise_compute_float_scale_gpu(
@@ -436,171 +376,103 @@ __global__ void llm_elemwise_compute_float_scale_gpu(
     }
 }
 
-void llm_elemwise_compute_float_scale(float* src, float* dst, size_t len, float scale) {
+void llm_elemwise_compute_float_scale(
+        float* src, float* dst, size_t len, float scale, cudaHandle* handle) {
     llm_elemwise_compute_float_scale_gpu<<<GET_BLOCKS(len), CUDA_NUM_THREADS>>>(
             src, dst, len, scale);
 }
-__global__ void llm_matmul_compute_float_float_gpu(
-        uint32_t n, float* dst, const float* src0, const float* bias, const float* src1,
-        uint32_t M, uint32_t N, uint32_t K, void* workspace, uint32_t size) {
-    CUDA_KERNEL_LOOP(index, n) {
-        uint32_t n_loc = index % N;
-        uint32_t m_loc = index / N;
 
-        const float* x = src0 + n * K;
-        float b = bias ? bias[n] : 0.0f;
-        float sumf = 0.0;
-
-        const float* y = src1 + m_loc * K;
-
-        for (int i = 0; i < K; i++) {
-            sumf += x[i] * y[i];
-        }
-        dst[index] = sumf + b;
-    }
-}
 void llm_matmul_compute_float_float(
         float* dst, const float* src0, const float* bias, const float* src1, uint32_t M,
-        uint32_t N, uint32_t K, void* workspace, uint32_t size) {
-    uint32_t count = M * N;
-    llm_matmul_compute_float_float_gpu<<<GET_BLOCKS(count), CUDA_NUM_THREADS>>>(
-            count, dst, src0, bias, src1, M, N, K, workspace, size);
-}
-
-__global__ void llm_matmul_compute_int4_float_step1_gpu(
-        uint32_t n, float* dst, const void* src0, const float* bias, const float* src1,
-        uint32_t M, uint32_t N, uint32_t K, void* workspace, uint32_t size) {
-    CUDA_KERNEL_LOOP(index, n) {
-        uint32_t m_loc = index / (K / QK80);
-        uint32_t nb_loc = index % (K / QK80);
-
-        uint32_t weight_q80_stride = K * sizeof(BlockQ80) / QK80;
-
-        const float* x = src1 + m_loc * K;
-
-        BlockQ80* y = (BlockQ80*)(static_cast<uint8_t*>(workspace) +
-                                  m_loc * weight_q80_stride);
-
-        float amax = 0.0f;  // absolute max
-        for (int l = 0; l < QK80; l++) {
-            const float v = x[nb_loc * QK80 + l];
-            // printf("ffgdfg323424234dfg %f\n", v);
-
-            amax = (amax > fabsf(v) ? amax : fabsf(v));
-        }
-
-        const float d = amax / ((1 << 7) - 1);
-        const float id = d ? 1.0f / d : 0.0f;
-
-        y[nb_loc].d = d;
-        for (int l = 0; l < QK80; ++l) {
-            const float v0 = x[nb_loc * QK80 + l] * id;
-            y[nb_loc].qs[l] = roundf(v0);
-        }
+        uint32_t N, uint32_t K, void* workspace, uint32_t size, cudaHandle* handle) {
+    cudaStream_t stream = handle->stream;
+    cublasHandle_t cublas_handle = handle->cublas_handle;
+    float alpha = 1.f;
+    float beta = 0.f;
+    CUBLAS_CHECK(cublasSetStream(cublas_handle, stream));
+    CUBLAS_CHECK(cublasSgemm(
+            cublas_handle, CUBLAS_OP_T, CUBLAS_OP_N, N, M, K,
+            &alpha, src0, K, src1, K, &beta, dst, N));
+    if (bias != nullptr) {
+        llm_elemwise_broadcast_dim0_src1_compute_float(
+                dst, bias, dst, M, N, ElemMode::Add, handle);
     }
 }
 
-__global__ void llm_matmul_compute_int4_float_step2_gpu(
-        uint32_t n, float* dst, const void* src0, const float* bias, const float* src1,
-        uint32_t M, uint32_t N, uint32_t K, void* workspace, uint32_t size) {
-    CUDA_KERNEL_LOOP(index, n) {
-        uint32_t m_loc = index / N;
-        uint32_t n_loc = index % N;
+__global__ void dequantize_mul_mat_vec(
+        const void* dx, const float* y, const float* bias, float* dst, const int M,
+        const int N, const int K) {
+        const int m_id = blockIdx.y;
+    const int n_id = blockIdx.x * blockDim.y + threadIdx.y;
+    const int tid = threadIdx.x;
 
-        uint32_t weight_q40_stride = K * sizeof(BlockQ40) / QK40;
-        uint32_t weight_q80_stride = K * sizeof(BlockQ80) / QK80;
+    if (m_id >= M || n_id >= N) {
+        return;
+    }
 
-        int8_t* q_src = static_cast<int8_t*>(workspace);
+    const int iter_stride = 2 * 32;
+    const int vals_per_iter =
+            iter_stride / 32;  // num quantized vals per thread and i iter
 
-        const void* q_weight =
-                static_cast<const uint8_t*>(src0) + n_loc * weight_q40_stride;
+    // partial sum for each thread
+    float tmp = 0.0f;
+    const float* srcy = y + m_id * K;
+    dst = dst + m_id * N;
+    float bias_val = bias ? bias[n_id] : 0.0f;
 
-        float b = bias ? bias[n_loc] : 0.0f;
-        int8_t* src = q_src + m_loc * weight_q80_stride;
+    for (int i = 0; i < K; i += iter_stride) {
+        const int col = i + vals_per_iter * tid;
+        const int ib = (n_id * K + col) / QK40;  // x block index
+        const int iqs = (col % QK40) / 2;        // x quant index
 
-        const BlockQ40* __restrict x = (BlockQ40*)(q_weight);
-        const BlockQ80* __restrict y = (BlockQ80*)(src);
+// processing >2 values per i iter is faster for fast GPUs
+#pragma unroll
+        for (int j = 0; j < vals_per_iter; j += 2) {
+            // process 2 vals per j iter
 
-        uint32_t nb = K / QK80;
-        float sumf = 0.0;
-        for (int i = 0; i < nb; i++) {
-            const float d0 = x[i].d;
-            const float d1 = y[i].d;
+            // dequantize
+            // for qr = 2 the iqs needs to increase by 1 per j iter because 2 weights
+            // per data val
+            float2 v;
+            const BlockQ40* x = (const BlockQ40*)dx + ib;
+            const float d = x->d;
+            const int vui = x->qs[iqs];
 
-            const uint8_t* __restrict p0 = x[i].qs;
-            const int8_t* __restrict p1 = y[i].qs;
+            v.x = vui & 0xF;
+            v.y = vui >> 4;
 
-            int sumi = 0;
-            for (int j = 0; j < QK80 / 2; j++) {
-                const uint8_t v0 = p0[j];
+            v.x = (v.x - 8.0f) * d;
+            v.y = (v.y - 8.0f) * d;
 
-                const int i0 = (int8_t)(v0 & 0x0F) - 8;
-                const int i1 = (int8_t)(v0 >> 4) - 8;
-
-                const int i2 = p1[2 * j + 0];
-                const int i3 = p1[2 * j + 1];
-
-                sumi += i0 * i2 + i1 * i3;
-            }
-            sumf += d0 * d1 * sumi;
+            // matrix multiplication
+            // for qr = 2 the y index needs to increase by 1 per j iter because of
+            // y_offset = qk/2
+            tmp += v.x * srcy[col];
+            tmp += v.y * srcy[col + 1];
         }
+    }
 
-        dst[index] = sumf + b;
+    // sum up partial sums and write back result
+    __syncthreads();
+#pragma unroll
+    for (int mask = 16; mask > 0; mask >>= 1) {
+        tmp += __shfl_xor_sync(0xffffffff, tmp, mask, 32);
+    }
+
+    if (tid == 0) {
+        dst[n_id] = tmp + bias_val;
     }
 }
 
-// compute the softmax of the last dim of src, and store the result in dst
-int temp = 0;
 void llm_matmul_compute_int4_float(
         float* dst, const void* src0, const float* bias, const float* src1, uint32_t M,
-        uint32_t N, uint32_t K, void* workspace, uint32_t size) {
-    auto temp_count = M * K;
-    temp++;
-    float* input = new float[temp_count];
-
-    cudaMemcpy(input, src1, temp_count * sizeof(float), cudaMemcpyDeviceToHost);
-    // std::ofstream outputFile("data.txt");
-    // for (int i = 0; i < temp_count; i++) {
-    //     // printf("%d input value %f\n", temp, input[i]);
-    //     outputFile << input[i] << "\n";
-    // }
-    // outputFile.close();
-    delete[] input;
-
-    INFER_ASSERT(sizeof(float) * K <= size, "workspace is not enough.");
-    uint32_t weight_q40_stride =
-            K * dtype_in_byte(DType::Int4) / dtype_block_size(DType::Int4);
-    uint32_t weight_q80_stride =
-            K * dtype_in_byte(DType::Int8) / dtype_block_size(DType::Int8);
-    //! dequantize input, and store in workspace
-    //! becuase the input is small than the weights, quantized the input
-    //! will reduce the memory traffic
-    uint32_t count1 = M * (K / QK80);
-
-    float* cpu_src1 = new float[count1];
-
-    llm_matmul_compute_int4_float_step1_gpu<<<GET_BLOCKS(count1), CUDA_NUM_THREADS>>>(
-            count1, dst, src0, bias, src1, M, N, K, workspace, size);
-
-    cudaMemcpy(cpu_src1, dst, count1 * sizeof(float), cudaMemcpyDeviceToHost);
-
-    for (uint32_t i = 0; i < count1; i++) {
-        // printf("%f\n", cpu_src1[i]);
-    }
-    delete[] cpu_src1;
-
-    uint32_t count2 = M * N;
-    llm_matmul_compute_int4_float_step2_gpu<<<GET_BLOCKS(count2), CUDA_NUM_THREADS>>>(
-            count2, dst, src0, bias, src1, M, N, K, workspace, size);
-
-    float* cpu_src = new float[count2];
-
-    cudaMemcpy(cpu_src, dst, count2 * sizeof(float), cudaMemcpyDeviceToHost);
-
-    // for (uint32_t i = 0; i < count2; i++) {
-    //     printf("3333 %f\n", cpu_src[i]);
-    // }
-    delete[] cpu_src;
+        uint32_t N, uint32_t K, void* workspace, uint32_t size, cudaHandle* handle) {
+    INFER_ASSERT(K % QK40 == 0, "embd is not the time of QK40.");
+    cudaStream_t stream = handle->stream;
+    const dim3 block_nums(N + 15 / 16, M, 1);
+    const dim3 block_dims(32, 16, 1);
+    dequantize_mul_mat_vec<<<block_nums, block_dims, 0, stream>>>(
+            src0, src1, bias, dst, M, N, K);
 }
 
 __global__ void llm_scale_diag_mask_inf_float_gpu(
@@ -623,7 +495,7 @@ __global__ void llm_scale_diag_mask_inf_float_gpu(
 
 void llm_scale_diag_mask_inf_float(
         float* dst, const float* src0, float scale, uint32_t n_past, uint32_t seqlen,
-        uint32_t head) {
+        uint32_t head, cudaHandle* handle) {
     uint32_t count = head * seqlen * (n_past + seqlen);
 
     llm_scale_diag_mask_inf_float_gpu<<<GET_BLOCKS(count), CUDA_NUM_THREADS>>>(
@@ -643,7 +515,8 @@ __global__ void llm_diag_mask_inf_float_gpu(
 }
 
 void llm_diag_mask_inf_float(
-        float* dst, const float* src0, uint32_t n_past, uint32_t N, uint32_t head) {
+        float* dst, const float* src0, uint32_t n_past, uint32_t N, uint32_t head,
+        cudaHandle* handle) {
     uint32_t count = head * N * (N + n_past);
 
     llm_diag_mask_inf_float_gpu<<<GET_BLOCKS(count), CUDA_NUM_THREADS>>>(
@@ -652,7 +525,7 @@ void llm_diag_mask_inf_float(
 
 void llm_permute_compute_float(
         float* dst, const float* src0, uint32_t dim0, uint32_t dim1, uint32_t dim2,
-        std::vector<uint32_t> param) {
+        std::vector<uint32_t> param, cudaHandle* handle) {
     return;
 }
 /**
@@ -681,7 +554,7 @@ __global__ void llm_matmul_compute_with_head_stride_float_gpu(
 
 void llm_matmul_compute_with_head_stride_float(
         float* dst, const float* srck, const float* srcq, uint32_t seqlen,
-        uint32_t embd, uint32_t head, uint32_t nr_past) {
+        uint32_t embd, uint32_t head, uint32_t nr_past, cudaHandle* handle) {
     // 用于计算query和key的点积
     uint32_t count = seqlen * head * (seqlen + nr_past);
     llm_matmul_compute_with_head_stride_float_gpu<<<
@@ -726,14 +599,15 @@ __global__ void llm_head_batched_matmul_compute_float_gpu(
 
 void llm_head_batched_matmul_compute_float(
         float* dst, const float* v, const float* qk, uint32_t seqlen, uint32_t embd,
-        uint32_t head, uint32_t nr_past) {
+        uint32_t head, uint32_t nr_past, cudaHandle* handle) {
     uint32_t count = seqlen * embd;
     llm_head_batched_matmul_compute_float_gpu<<<GET_BLOCKS(count), CUDA_NUM_THREADS>>>(
             count, dst, v, qk, seqlen, embd, head, nr_past);
 }
 
 void llm_glm_gmask_inf_float(
-        float* dst, uint32_t n_past, uint32_t seqlen, uint32_t head) {
+        float* dst, uint32_t n_past, uint32_t seqlen, uint32_t head,
+        cudaHandle* handle) {
     //! set every head the last number of data to -inf of every row expect
     //! the
     //! last row
@@ -748,7 +622,7 @@ void llm_glm_gmask_inf_float(
 }
 void llm_glm_rope_compute_float(
         float* dst, const float* src0, uint32_t n_past, uint32_t gmask_positon,
-        uint32_t seqlen, uint32_t head, uint32_t embd) {
+        uint32_t seqlen, uint32_t head, uint32_t embd, cudaHandle* handle) {
     // bool prefill = false;
     // if (n_past == 0) {
     //     prefill = true;
@@ -798,10 +672,12 @@ void llm_glm_rope_compute_float(
 
 void llm_matmul_compute_with_head_strideq_broadcastk_float(
         float* dst, const float* srck, const float* srcq, uint32_t seqlen,
-        uint32_t embd, uint32_t head, uint32_t query_group_num, uint32_t nr_past) {}
+        uint32_t embd, uint32_t head, uint32_t query_group_num, uint32_t nr_past,
+        cudaHandle* handle) {}
 
 void llm_head_batched_matmul_broadcastv_float(
         float* dst, const float* v, const float* qk, uint32_t seqlen, uint32_t embd,
-        uint32_t head, uint32_t query_group_num, uint32_t nr_past) {}
+        uint32_t head, uint32_t query_group_num, uint32_t nr_past, cudaHandle* handle) {
+}
 }  // namespace gpu
 }  // namespace inferllm

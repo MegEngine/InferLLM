@@ -142,6 +142,27 @@ std::string format(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
             abort();                                                      \
         }                                                                 \
     } while (0)
+#if CUDART_VERSION >= 12000
+#define CUBLAS_CHECK(err)                                                       \
+    do {                                                                        \
+        cublasStatus_t err_ = (err);                                            \
+        if (err_ != CUBLAS_STATUS_SUCCESS) {                                    \
+            fprintf(stderr, "\ncuBLAS error %d at %s:%d: %s\n", err_, __FILE__, \
+                    __LINE__, cublasGetStatusString(err_));                     \
+            exit(1);                                                            \
+        }                                                                       \
+    } while (0)
+#else
+#define CUBLAS_CHECK(err)                                                              \
+    do {                                                                               \
+        cublasStatus_t err_ = (err);                                                   \
+        if (err_ != CUBLAS_STATUS_SUCCESS) {                                           \
+            fprintf(stderr, "\ncuBLAS error %d at %s:%d\n", err_, __FILE__, __LINE__); \
+            exit(1);                                                                   \
+        }                                                                              \
+    } while (0)
+#endif  // CUDART_VERSION >= 11
 #else
 #define CUDA_CHECK(expr)
+#define CUBLAS_CHECK(err)
 #endif

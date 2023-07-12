@@ -112,7 +112,8 @@ GPUDevice::~GPUDevice() {
             CUDA_CHECK(cudaFree(ptr));
         }
     }
-    CUDA_CHECK(cudaStreamDestroy(m_stream));
+    CUDA_CHECK(cudaStreamDestroy(m_handle.stream));
+    CUBLAS_CHECK(cublasDestroy(m_handle.cublas_handle));
 }
 
 void GPUDevice::host2device_copy(void* device, const void* host, size_t size) {

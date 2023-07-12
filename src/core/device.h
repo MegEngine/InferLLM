@@ -88,9 +88,12 @@ class GPUDevice : public Device {
 public:
     GPUDevice(int device) : Device() {
         CUDA_CHECK(cudaSetDevice(device));
-        CUDA_CHECK(cudaStreamCreate(&m_stream));
+        CUDA_CHECK(cudaStreamCreate(&(m_handle.stream)));
+        CUBLAS_CHECK(cublasCreate(&(m_handle.cublas_handle)));
+        CUBLAS_CHECK(
+                cublasSetMathMode(m_handle.cublas_handle, CUBLAS_TF32_TENSOR_OP_MATH));
         m_kernel = make_unique<Kernel>(KernelType::GPU);
-        m_kernel->set_stream(m_stream);
+        m_kernel->set_handle(&m_handle);
     }
 
     ~GPUDevice();
@@ -106,7 +109,7 @@ public:
     void device2device_copy(void* dst, const void* src, size_t size) override;
 
 private:
-    cudaStream_t m_stream{nullptr};
+    cudaHandle m_handle;
 };
 
 #endif

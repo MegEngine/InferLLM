@@ -139,7 +139,6 @@ public:
         size_t K = weight_shape[1];
         size_t N = weight_shape[0];
         outputs()[0]->set_shape({M, N}, inputs()[0]->dtype());
-        // INFER_LOG("Matmul shape is M/K/N = %zu, %zu, %zu\n", M, K, N);
     }
     virtual void execute(WorkSpace* workspace, uint32_t nr_past) override;
 
