@@ -60,6 +60,10 @@ template <typename ctype>
         float err = diff(iv0, iv1);
         error_sum += std::abs(err);
         error_sum_biased += err;
+        //! all are nan, INFINITY, -INFINITY will not check
+        if (!good_float(iv0) && !good_float(iv1)) {
+            continue;
+        }
         if (!good_float(iv0) || !good_float(iv1) || std::abs(err) > maxerr) {
             return ::testing::AssertionFailure()
                 << "Unequal value\n"

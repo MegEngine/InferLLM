@@ -114,5 +114,55 @@ void Checker<MatMul>::create_opr(size_t N, size_t K, bool bias) {
     m_device_output = m_device_opr->outputs()[0];
 }
 
+#define NO_PARAM_CREATOR(Op)                                                           \
+    template <>                                                                        \
+    template <>                                                                        \
+    void Checker<Op>::create_opr() {                                                   \
+        m_naive_values.clear();                                                        \
+        m_device_values.clear();                                                       \
+        auto naive_input = std::make_shared<Tensor>(m_naive_device, "naive_input");    \
+        auto device_input = std::make_shared<Tensor>(m_device, "device_input");        \
+        m_device_opr =                                                                 \
+                std::make_shared<Op>(m_device, "device_opr", OpIOs{device_input});     \
+        m_naive_opr =                                                                  \
+                std::make_shared<Op>(m_naive_device, "naive_opr", OpIOs{naive_input}); \
+        m_naive_values.push_back(naive_input);                                         \
+        m_device_values.push_back(device_input);                                       \
+        m_device_weights = m_device_opr->weights();                                    \
+        m_naive_weights = m_naive_opr->weights();                                      \
+        m_naive_output = m_naive_opr->outputs()[0];                                    \
+        m_device_output = m_device_opr->outputs()[0];                                  \
+    }
+
+NO_PARAM_CREATOR(SoftMax)
+NO_PARAM_CREATOR(DiagMask)
+
+template <>
+template <>
+void Checker<LlamaAttention>::create_opr(
+        uint32_t embd, uint32_t rot, uint32_t nr_ctx, uint32_t head, uint32_t layer_id,
+        DType compt_type) {
+    m_naive_values.clear();
+    m_device_values.clear();
+    auto naive_input = std::make_shared<Tensor>(m_naive_device, "naive_input");
+    auto device_input = std::make_shared<Tensor>(m_device, "device_input");
+
+    m_device_opr = std::make_shared<LlamaAttention>(
+            m_device, "device_opr", OpIOs{device_input}, embd, rot, nr_ctx, head,
+            layer_id, compt_type);
+    m_naive_opr = std::make_shared<LlamaAttention>(
+            m_naive_device, "naive_opr", OpIOs{naive_input}, embd, rot, nr_ctx, head,
+            layer_id, compt_type);
+
+    m_naive_values.push_back(naive_input);
+    m_device_values.push_back(device_input);
+
+    m_device_weights = m_device_opr->weights();
+    m_naive_weights = m_naive_opr->weights();
+
+    m_naive_output = m_naive_opr->outputs()[0];
+    m_device_output = m_device_opr->outputs()[0];
+}
+
 }  // namespace test
 }  // namespace inferllm

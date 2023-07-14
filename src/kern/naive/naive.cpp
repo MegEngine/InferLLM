@@ -414,6 +414,8 @@ TaskSet llm_diag_mask_inf_float(
                 for (uint32_t i = n_past; i < nc; i++) {
                     if (i > n_past + j) {
                         dst[k * nc * nr + j * nc + i] = -INFINITY;
+                    } else {
+                        dst[k * nc * nr + j * nc + i] = src0[k * nc * nr + j * nc + i];
                     }
                 }
             }

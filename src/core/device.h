@@ -102,6 +102,14 @@ public:
 
     void free_device(void* ptr) override;
 
+    void* aligned_alloc(size_t size) override {
+        void* ptr = nullptr;
+        CUDA_CHECK(cudaMalloc(&ptr, size));
+        return ptr;
+    }
+
+    void aligned_free(void* ptr) override { CUDA_CHECK(cudaFree(ptr)); }
+
     void host2device_copy(void* device, const void* host, size_t size) override;
 
     void device2host_copy(void* host, const void* device, size_t size) override;

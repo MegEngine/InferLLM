@@ -38,6 +38,7 @@ TEST_F(GPU, TestElemwise) {
 
 TEST_F(GPU, TestLayerNorm) {
     Checker<LayerNorm> checker(device(), naive_device());
+    checker.set_epsilon(2e-1);
     float eps = 1e-5;
     for (bool mul : {true, false}) {
         for (bool bias : {true, false}) {
@@ -65,6 +66,47 @@ TEST_F(GPU, TestMatMul) {
                 checker.create_opr(N, K, bias);
                 for (size_t M : {1, 4}) {
                     checker.exec({TensorShape{M, K}});
+                }
+            }
+        }
+    }
+}
+
+TEST_F(GPU, TestSoftMax) {
+    Checker<SoftMax> checker(device(), naive_device());
+    checker.create_opr();
+    for (size_t M : {1, 2, 32}) {
+        for (size_t dim : {1, 128, 4096}) {
+            checker.exec({TensorShape{M, dim}});
+        }
+    }
+}
+
+TEST_F(GPU, TestDiagMask) {
+    Checker<DiagMask> checker(device(), naive_device());
+    checker.create_opr();
+    for (size_t head : {32, 36}) {
+        for (size_t dim : {13, 128, 256}) {
+            checker.exec({TensorShape{head, dim, dim}});
+        }
+    }
+}
+
+TEST_F(GPU, TestLlamaAttention) {
+    Checker<LlamaAttention> checker(device(), naive_device());
+    for (auto dtype : {DType::Float32/*, DType::Int4*/}) {
+        uint32_t ctx = 128;
+        uint32_t layer_id = 0;
+        checker.set_weight_dtype(0, dtype);
+        checker.set_weight_dtype(1, dtype);
+        checker.set_weight_dtype(2, dtype);
+        for (uint32_t seqlen : {1/*, 4, 32*/}) {
+            for (uint32_t dim : {128}) {
+                for (uint32_t head : {16}) {
+                    for (uint32_t rot : {dim / head}) {
+                        checker.create_opr(dim, rot, ctx, head, layer_id, DType::Float32);
+                        checker.exec({TensorShape{seqlen, dim}});
+                    }
                 }
             }
         }

@@ -63,19 +63,6 @@ void Embedding::execute(WorkSpace*, uint32_t) {
             kernel->operator()<KernelID::EmbeddingGetInt4Float>(
                     weight->ptr(), input->ptr<uint32_t>(), output->ptr<float>(), len,
                     m_embd);
-
-            //         float* temp = new float[len * m_embd];
-
-            //         std::ofstream fout("file1.txt");
-            //         cudaMemcpy(temp,output->ptr<float>(),sizeof(float)*len*m_embd,
-            //         cudaMemcpyDeviceToHost);
-
-            //         for (int i = 0; i < len * m_embd; i++) {
-            //             fout << temp[i] << std::endl;
-            //         }
-            //  fout.close();
-            //         delete[] temp;
-            //         exit(0);
         } else if (weight_type == DType::Float32) {
             kernel->operator()<KernelID::EmbeddingGetFloatFloat>(
                     weight->ptr<float>(), input->ptr<uint32_t>(), output->ptr<float>(),
@@ -268,7 +255,7 @@ size_t AttentionBase::get_workspace_in_byte() {
                 kernel->nr_thread(), M, N, K);
         //! out q
         total += seqlen * m_embd * sizeof(float);
-        //! kv out
+        //! qk out
         total += m_head * seqlen * m_ctx * sizeof(float);
     }
     if (src_dtype == DType::Float32 && w_dtype == DType::Float32) {
@@ -277,7 +264,7 @@ size_t AttentionBase::get_workspace_in_byte() {
                 kernel->nr_thread(), M, N, K);
         //! out q
         total += seqlen * m_embd * sizeof(float);
-        //! kv out
+        //! qk out
         total += m_head * seqlen * m_ctx * sizeof(float);
     }
     return total;

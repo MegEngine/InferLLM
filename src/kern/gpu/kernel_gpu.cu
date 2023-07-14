@@ -31,38 +31,42 @@ inline int GET_BLOCKS(const int N) {
 }
 
 __global__ void llm_elemwise_broadcast_dim0_src1_compute_float_add_gpu(
-        uint32_t n, const float* src0, const float* src1, float* dst, uint32_t len0,
+        const float* src0, const float* src1, float* dst, uint32_t len0,
         uint32_t len1) {
-    CUDA_KERNEL_LOOP(index, n) {
-        uint32_t embed_loc = index % len1;
-        dst[index] = src0[index] + src1[embed_loc];
+    int row = blockIdx.y;
+    int col = threadIdx.x + blockIdx.x * blockDim.x;
+    if (col < len1) {
+        int index = row * len1 + col;
+        dst[index] = src0[index] + src1[col];
     }
 }
 
 __global__ void llm_elemwise_broadcast_dim0_src1_compute_float_mul_gpu(
-        uint32_t n, const float* src0, const float* src1, float* dst, uint32_t len0,
-        uint32_t len1) {
-    CUDA_KERNEL_LOOP(index, n) {
-        uint32_t embed_loc = index % len1;
-        dst[index] = src0[index] * src1[embed_loc];
+        const float* src0, const float* src1, float* dst, uint32_t rows,
+        uint32_t ncols) {
+    int row = blockIdx.y;
+    int col = threadIdx.x + blockIdx.x * blockDim.x;
+    if (col < ncols) {
+        int index = row * ncols + col;
+        dst[index] = src0[index] * src1[col];
     }
 }
 
 void llm_elemwise_broadcast_dim0_src1_compute_float(
-        const float* src0, const float* src1, float* dst, uint32_t len0, uint32_t len1,
+        const float* src0, const float* src1, float* dst, uint32_t rows, uint32_t ncols,
         ElemMode mode, cudaHandle* handle) {
-    uint32_t count = len0 * len1;
+    cudaStream_t stream = handle->stream;
+    const dim3 block_dims(512, 1, 1);
+    const dim3 block_nums((ncols + 511) / 512, rows, 1);
     switch (mode) {
         case ElemMode::Add: {
             llm_elemwise_broadcast_dim0_src1_compute_float_add_gpu<<<
-                    GET_BLOCKS(count), CUDA_NUM_THREADS>>>(
-                    count, src0, src1, dst, len0, len1);
+                    block_nums, block_dims, 0, stream>>>(src0, src1, dst, rows, ncols);
             break;
         }
         case ElemMode::Mul: {
             llm_elemwise_broadcast_dim0_src1_compute_float_mul_gpu<<<
-                    GET_BLOCKS(count), CUDA_NUM_THREADS>>>(
-                    count, src0, src1, dst, len0, len1);
+                    block_nums, block_dims, 0, stream>>>(src0, src1, dst, rows, ncols);
             break;
         }
         default:
@@ -70,73 +74,77 @@ void llm_elemwise_broadcast_dim0_src1_compute_float(
     }
 }
 
-template <typename Function, typename... Args>
-__global__ void ApplyFunction(Function functor, int64_t n, float* ret, Args... args) {
-    const int global_tid = blockIdx.x * kBlockSize + threadIdx.x;
-    for (int64_t i = global_tid; i < n; i += blockDim.x * gridDim.x) {
-        ret[i] = functor(i, args...);
+
+__global__ void softmax_f32_cuda(const float* x, float* dst, const int cols) {
+    const int row = blockDim.y * blockIdx.y + threadIdx.y;
+    const int block_size = blockDim.x;
+    const int tid = threadIdx.x;
+    const float* src = x + row * cols;
+    dst = dst + row * cols;
+
+    float max = -INFINITY;
+    for (int col = tid; col < cols; col += block_size) {
+        const float val = src[col];
+        max = val > max ? val : max;
     }
-}
 
-template <typename Function, typename... Args>
-cudaError_t LaunchKernel(Function fun, int64_t n, float* ret, Args... args) {
-    int num_blocks = (n + kBlockSize - 1) / kBlockSize;
-    ApplyFunction<Function, Args...><<<num_blocks, kBlockSize>>>(fun, n, ret, args...);
-    return cudaPeekAtLastError();
-}
+    // sum up partial sums
+    __syncthreads();
+#pragma unroll
+    for (int mask = 16; mask > 0; mask >>= 1) {
+        float temp = __shfl_xor_sync(0xffffffff, max, mask);
+        max = max > temp ? max : temp;
+    }
 
-__global__ void llm_softmax_compute_float_gpu(
-        uint32_t n, const float* src, float* dst, uint32_t len_row, uint32_t col) {
-    CUDA_KERNEL_LOOP(index, n) {
-        const float* psrc = src + index * col;
-        float* pdst = dst + index * col;
+    float sum = 0.0;
+    for (int col = tid; col < cols; col += block_size) {
+        const float val = expf(src[col] - max);
+        sum += val;
+        dst[col] = val;
+    }
 
-        float max = -INFINITY;
-        for (uint32_t i = 0; i < col; ++i) {
-            if (max < psrc[i])
-                max = psrc[i];
-        }
+    // sum up partial sums
+    __syncthreads();
+#pragma unroll
+    for (int mask = 16; mask > 0; mask >>= 1) {
+        sum += __shfl_xor_sync(0xffffffff, sum, mask, 32);
+    }
 
-        float sum = 0.0f;
-
-        for (uint32_t i = 0; i < col; i++) {
-            if (psrc[i] == -INFINITY) {
-                pdst[i] = 0.0f;
-            } else {
-                float val = exp(psrc[i] - max);
-                sum += val;
-                pdst[i] = val;
-            }
-        }
-
-        sum = 1.0 / sum;
-        for (uint32_t j = 0; j < col; j++) {
-            pdst[j] = pdst[j] * sum;
-        }
+    for (int col = tid; col < cols; col += block_size) {
+        dst[col] /= sum;
     }
 }
 
 void llm_softmax_compute_float(
         const float* src, float* dst, uint32_t len_row, uint32_t col,
         cudaHandle* handle) {
-    llm_softmax_compute_float_gpu<<<GET_BLOCKS(len_row), CUDA_NUM_THREADS>>>(
-            len_row, src, dst, len_row, col);
+    cudaStream_t stream = handle->stream;
+    const dim3 block_dims(kNumWaves, 1, 1);
+    const dim3 block_nums(1, len_row, 1);
+    softmax_f32_cuda<<<block_nums, block_dims, 0, stream>>>(src, dst, col);
+}
+
+__global__ void embeding_float_cuda(
+        const float* weights, const uint32_t* index, float* dst, uint32_t len_seq,
+        uint32_t embd) {
+    int seq_id = blockIdx.y;
+    int thread_id = threadIdx.x + blockIdx.x * blockDim.x;
+    if (thread_id < embd) {
+        uint32_t row = index[seq_id];
+        dst = dst + seq_id * embd;
+        weights = weights + row * embd;
+        dst[thread_id] = weights[thread_id];
+    }
 }
 
 void llm_embedding_get_float_float(
         const float* weights, const uint32_t* index, float* dst, uint32_t len_seq,
         uint32_t embd, cudaHandle* handle) {
-    std::vector<uint32_t> cpu_index(len_seq);
-    cudaMemcpy(
-            cpu_index.data(), index, len_seq * sizeof(uint32_t),
-            cudaMemcpyDeviceToHost);
-    for (uint32_t i = 0; i < len_seq; ++i) {
-        const int row = cpu_index[i];
-        const int weight_stride = embd;
-        cudaMemcpy(
-                dst + i * embd, weights + row * weight_stride, embd * sizeof(float),
-                cudaMemcpyDeviceToDevice);
-    }
+    cudaStream_t stream = handle->stream;
+    const dim3 block_dims(512, 1, 1);
+    const dim3 block_nums((embd + 512) / 512, len_seq, 1);
+    embeding_float_cuda<<<block_nums, block_dims, 0, stream>>>(
+            weights, index, dst, len_seq, embd);
 }
 
 __global__ void llm_embedding_get_int4_float_gpu(
@@ -200,30 +208,48 @@ struct MulFunctor {
     }
 };
 
+template <typename Function, typename... Args>
+__global__ void ApplyFunction(Function functor, int64_t n, float* ret, Args... args) {
+    const int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid < n) {
+        ret[tid] = functor(tid, args...);
+    }
+}
+
+template <typename Function, typename... Args>
+cudaError_t LaunchKernel(
+        Function fun, cudaStream_t stream, int64_t n, float* ret, Args... args) {
+    int num_blocks = (n + kBlockSize - 1) / kBlockSize;
+    ApplyFunction<Function, Args...>
+            <<<num_blocks, kBlockSize, 0, stream>>>(fun, n, ret, args...);
+    return cudaPeekAtLastError();
+}
+
 void llm_elemwise_compute_float(
         InData<float> srcs, float* dst, size_t len, ElemMode mode, cudaHandle* handle) {
+    cudaStream_t stream = handle->stream;
     switch (mode) {
         case ElemMode::Add: {
             const float* src0 = srcs[0];
             const float* src1 = srcs[1];
-            LaunchKernel(AddFunctor(), len, dst, src0, src1);
+            LaunchKernel(AddFunctor(), stream, len, dst, src0, src1);
             break;
         }
         case ElemMode::Mul: {
             const float* src0 = srcs[0];
             const float* src1 = srcs[1];
 
-            LaunchKernel(MulFunctor(), len, dst, src0, src1);
+            LaunchKernel(MulFunctor(), stream, len, dst, src0, src1);
             break;
         }
         case ElemMode::Silu: {
             const float* src0 = srcs[0];
-            LaunchKernel(SiluFunctor(), len, dst, src0);
+            LaunchKernel(SiluFunctor(), stream, len, dst, src0);
             break;
         }
         case ElemMode::Gelu: {
             const float* src0 = srcs[0];
-            LaunchKernel(GeluFunctor(), len, dst, src0);
+            LaunchKernel(GeluFunctor(), stream, len, dst, src0);
             break;
         }
         default:
@@ -231,154 +257,161 @@ void llm_elemwise_compute_float(
     }
 }
 
-__global__ void llm_rms_norm_compute_float_gpu(
-        const float* src, float* dst, uint32_t seq_len, uint32_t embd, float eps) {
-    CUDA_KERNEL_LOOP(i, seq_len) {
-        const float* row = src + i * embd;
-        float* out = dst + i * embd;
+__global__ void rms_norm_f32(const float* x, float* dst, const int ncols, float eps) {
+    const int row = blockIdx.x;
+    const int tid = threadIdx.x;
+    const int WARP_SIZE = blockDim.x;
 
-        float mean = 0.0;
-        for (uint32_t j = 0; j < embd; j++) {
-            mean += row[j] * row[j];
-        }
-        mean /= embd;
+    float tmp = 0.0f;  // partial sum for thread in warp
+    for (int i = 0; i < ncols; i += WARP_SIZE) {
+        const int col = i + tid;
+        const float xi = x[row * ncols + col];
+        tmp += xi * xi;
+    }
 
-        const float scale = 1.0 / sqrt(mean + eps);
+    // sum up partial sums
+    __syncthreads();
+#pragma unroll
+    for (int mask = 16; mask > 0; mask >>= 1) {
+        tmp += __shfl_xor_sync(0xffffffff, tmp, mask, 32);
+    }
 
-        for (uint32_t j = 0; j < embd; j++) {
-            out[j] = row[j] * scale;
-        }
+    const float mean = tmp / ncols;
+    const float scale = 1.0f / sqrtf(mean + eps);
+
+    for (int i = 0; i < ncols; i += WARP_SIZE) {
+        const int col = i + tid;
+        dst[row * ncols + col] = scale * x[row * ncols + col];
     }
 }
 
 void llm_rms_norm_compute_float(
         const float* src, float* dst, uint32_t seq_len, uint32_t embd, float eps,
         cudaHandle* handle) {
-    llm_rms_norm_compute_float_gpu<<<GET_BLOCKS(seq_len), CUDA_NUM_THREADS>>>(
-            src, dst, seq_len, embd, eps);
+    cudaStream_t stream = handle->stream;
+    rms_norm_f32<<<seq_len, kNumWaves, 0, stream>>>(
+            src, dst,  embd, eps);
 }
 
-__global__ void llm_norm_compute_float_gpu(
-        uint32_t n, const float* src, float* dst, uint32_t seq_len, uint32_t embd,
-        float eps) {
-    CUDA_KERNEL_LOOP(i, n) {
-        const float* row = src + i * embd;
-        float* out = dst + i * embd;
+__global__ void norm_f32(const float* x, float* dst, const int ncols, float eps) {
+    const int row = blockIdx.x;
+    const int tid = threadIdx.x;
+    const int WARP_SIZE = blockDim.x;
 
-        float mean = 0.0;
-        for (uint32_t j = 0; j < embd; j++) {
-            mean += row[j];
-        }
-        mean /= embd;
+    float mean = 0.0f;  // partial sum for thread in warp
+    for (int i = 0; i < ncols; i += WARP_SIZE) {
+        const int col = i + tid;
+        const float xi = x[row * ncols + col];
+        mean += xi;
+    }
+    // sum up partial sums
+    __syncthreads();
+#pragma unroll
+    for (int mask = 16; mask > 0; mask >>= 1) {
+        mean += __shfl_xor_sync(0xffffffff, mean, mask, 32);
+    }
+    mean = mean / ncols;
 
-        float sum2 = 0.0;
-        for (uint32_t j = 0; j < embd; j++) {
-            float v = row[j] - mean;
-            out[j] = v;
-            sum2 += v * v;
-        }
+    float sum = 0.0f;  // partial sum for thread in warp
+    for (int i = 0; i < ncols; i += WARP_SIZE) {
+        const int col = i + tid;
+        const float xi = x[row * ncols + col] - mean;
+        sum += xi * xi;
+        dst[row * ncols + col] = xi;
+    }
+    // sum up partial sums
+    __syncthreads();
+#pragma unroll
+    for (int mask = 16; mask > 0; mask >>= 1) {
+        sum += __shfl_xor_sync(0xffffffff, sum, mask, 32);
+    }
+    const float scale = 1.0f / sqrtf(sum / ncols + eps);
 
-        const float scale = 1.0 / sqrt(sum2 / embd + eps);
-
-        for (uint32_t j = 0; j < embd; j++) {
-            out[j] = out[j] * scale;
-        }
+    for (int i = 0; i < ncols; i += WARP_SIZE) {
+        const int col = i + tid;
+        dst[row * ncols + col] = scale * x[row * ncols + col];
     }
 }
 
 void llm_norm_compute_float(
         const float* src, float* dst, uint32_t seq_len, uint32_t embd, float eps,
         cudaHandle* handle) {
-    llm_norm_compute_float_gpu<<<GET_BLOCKS(seq_len), CUDA_NUM_THREADS>>>(
-            seq_len, src, dst, seq_len, embd, eps);
+    cudaStream_t stream = handle->stream;
+    norm_f32<<<seq_len, kNumWaves, 0, stream>>>(
+            src, dst,  embd, eps);
 }
 
-__global__ void llm_rope_compute_float_gpu(
-        uint32_t n, float* dst, const float* src0, uint32_t n_past, uint32_t n_rot,
-        RotMode m, uint32_t seqlen, uint32_t head, uint32_t embd) {
-    int mode = static_cast<int>(m);
-    int n_dims = n_rot;
-    CUDA_KERNEL_LOOP(index, n) {
-        uint32_t half_rot = n_rot / 2;
+template <bool halfmode>
+__global__ void rope_compute_float(
+        float* dst, const float* src, float theta_scale, uint32_t position_offset,
+        uint32_t n_rot, uint32_t seqlen, uint32_t n_head, uint32_t head_embd) {
+    const int rot = threadIdx.x;
+    const int head = blockIdx.x;
+    const int seq = blockIdx.y;
 
-        uint32_t rot_loc = index % half_rot;
-        uint32_t head_loc = (index / half_rot) % head;
-        uint32_t seq_loc = index / (head * half_rot);
+    if (rot >= n_rot / 2 || head >= n_head || seq >= seqlen) {
+        return;
+    }
 
-        const int p = (mode == 0 ? n_past + seq_loc : seq_loc);
-        const double theta = pow(10000.0, ((double)-rot_loc * 2) / n_dims);
+    const float theta = position_offset * powf(theta_scale, rot);
+    const float sin_theta = sinf(theta);
+    const float cos_theta = cosf(theta);
 
-        const double cos_theta = cos(p * theta);
-        const double sin_theta = sin(p * theta);
-
-        const float* const src =
-                src0 + seq_loc * head * embd + head_loc * embd + rot_loc * 2;
-        float* dst_data = dst + seq_loc * head * embd + head_loc * embd + rot_loc * 2;
-
-        double x0 = src[0];
-        double x1 = src[1];
-        if (mode == 0) {
-            dst_data[0] = x0 * cos_theta - x1 * sin_theta;
-            dst_data[1] = x0 * sin_theta + x1 * cos_theta;
-
-        } else {
-            if (seq_loc >= n_past) {
-                dst_data[0] = x0 * cos_theta - x1 * sin_theta;
-                dst_data[1] = x0 * sin_theta + x1 * cos_theta;
-            }
-        }
+    const int offset = seq * n_head * head_embd + head * head_embd;
+    if (halfmode) {
+        const int half_embd = head_embd / 2;
+        const float x0 = src[offset + rot];
+        const float x1 = src[offset + rot + half_embd];
+        dst[offset + rot] = x0 * cos_theta - x1 * sin_theta;
+        dst[offset + rot + half_embd] = x0 * sin_theta + x1 * cos_theta;
+    } else {
+        const float x0 = src[offset + 2 * rot];
+        const float x1 = src[offset + 2 * rot + 1];
+        dst[offset + 2 * rot] = x0 * cos_theta - x1 * sin_theta;
+        dst[offset + 2 * rot + 1] = x0 * sin_theta + x1 * cos_theta;
     }
 }
 
-void llm_rope_compute_float_cpu(
-        float* dst, const float* src0, uint32_t n_past, uint32_t n_rot, RotMode m,
-        uint32_t seqlen, uint32_t head, uint32_t embd, cudaHandle* handle) {
-    int ne2 = seqlen;
-    // int ne1 = head;
-    // int ne0 = embd;
-    int mode = static_cast<int>(m);
-    int n_dims = n_rot;
-
-    for (int i1 = 0; i1 < head; i1++) {
-        for (int i2 = (mode == 0 ? 0 : n_past); i2 < ne2; i2++) {
-            const int p = (mode == 0 ? n_past + i2 : i2);
-            for (int i0 = 0; i0 < n_dims; i0 += 2) {
-                const double theta = pow(10000.0, ((double)-i0) / n_dims);
-
-                const double cos_theta = cos(p * theta);
-                const double sin_theta = sin(p * theta);
-
-                const float* const src = src0 + i2 * head * embd + i1 * embd + i0;
-                float* dst_data = dst + i2 * head * embd + i1 * embd + i0;
-
-                double x0 = src[0];
-                double x1 = src[1];
-
-                dst_data[0] = x0 * cos_theta - x1 * sin_theta;
-                dst_data[1] = x0 * sin_theta + x1 * cos_theta;
-            }
-        }
-    }
-}
 void llm_rope_compute_float(
-        float* dst, const float* src0, uint32_t n_past, uint32_t n_rot, RotMode m,
-        uint32_t seqlen, uint32_t head, uint32_t embd, cudaHandle* handle) {
-    uint32_t count = seqlen * head * (n_rot / 2);
+        float* dst, const float* src, uint32_t n_past, uint32_t n_rot, RotMode m,
+        uint32_t seqlen, uint32_t head, uint32_t head_embd, cudaHandle* handle) {
+    cudaStream_t stream = handle->stream;
 
-    llm_rope_compute_float_gpu<<<GET_BLOCKS(count), CUDA_NUM_THREADS>>>(
-            count, dst, src0, n_past, n_rot, m, seqlen, head, embd);
+    const float theta_scale = powf(10000.0, -2.0f / n_rot);
+    const float position_offset = n_past;
+
+    INFER_ASSERT(n_rot <= 2048, "n_rot is two large.");
+    INFER_ASSERT(n_rot % 2 == 0, "n_rot must be even.");
+    const dim3 block_dims(n_rot / 2, 1, 1);
+    const dim3 block_nums(head, seqlen, 1);
+    //! offset to nr_past
+    if (m == RotMode::Mode1) {
+        src = src + n_past * head_embd * head;
+        dst = dst + n_past * head_embd * head;
+    }
+    if (m == RotMode::ModelRotHalf) {
+        rope_compute_float<true><<<block_nums, block_dims, 0, stream>>>(
+                dst, src, theta_scale, position_offset, n_rot, seqlen, head, head_embd);
+    } else {
+        rope_compute_float<false><<<block_nums, block_dims, 0, stream>>>(
+                dst, src, theta_scale, position_offset, n_rot, seqlen, head, head_embd);
+    }
 }
 
 __global__ void llm_elemwise_compute_float_scale_gpu(
         float* src, float* dst, size_t len, float scale) {
-    CUDA_KERNEL_LOOP(i, len) {
-        dst[i] = src[i] * scale;
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < len) {
+        dst[index] = src[index] * scale;
     }
 }
 
 void llm_elemwise_compute_float_scale(
         float* src, float* dst, size_t len, float scale, cudaHandle* handle) {
-    llm_elemwise_compute_float_scale_gpu<<<GET_BLOCKS(len), CUDA_NUM_THREADS>>>(
+    cudaStream_t stream = handle->stream;
+    const dim3 block_dims(CUDA_NUM_THREADS, 1, 1);
+    const dim3 block_nums((len + CUDA_NUM_THREADS - 1) / CUDA_NUM_THREADS, 1, 1);
+    llm_elemwise_compute_float_scale_gpu<<<block_nums, block_dims, 0, stream>>>(
             src, dst, len, scale);
 }
 
@@ -476,51 +509,66 @@ void llm_matmul_compute_int4_float(
 }
 
 __global__ void llm_scale_diag_mask_inf_float_gpu(
-        uint32_t n, float* dst, const float* src0, float scale, uint32_t n_past,
-        uint32_t seqlen, uint32_t head) {
-    CUDA_KERNEL_LOOP(index, n) {
-        uint32_t seq_loc = (index / (seqlen + n_past)) % seqlen;
-        uint32_t len_loc = index % (seqlen + n_past);
+        const float* src, float* dst, const int past, const int len, const int head_dim,
+        float scale) {
+    const int head = blockIdx.z;
+    const int row = blockIdx.y * blockDim.y + threadIdx.y;
+    const int col = blockIdx.x * blockDim.x + threadIdx.x;
 
-        if (len_loc > n_past + seq_loc) {
-            dst[index] = -INFINITY;
-        } else {
-            dst[index] = src0[index] * scale;
-        }
-    }
+    if (col >= past + len || row >= len || head >= head_dim)
+        return;
+
+    const int row_stride = len + past;
+    const int head_stride = len * (len + past);
+
+    src = src + head * head_stride + row * row_stride;
+    dst = dst + head * head_stride + row * row_stride;
+
+    dst[col] = (col > past + row) ? -INFINITY : src[col] * scale;
 }
-/**
- * dst :head *seq * (seq +nr_past)
- */
 
 void llm_scale_diag_mask_inf_float(
-        float* dst, const float* src0, float scale, uint32_t n_past, uint32_t seqlen,
+        float* dst, const float* src, float scale, uint32_t past, uint32_t seqlen,
         uint32_t head, cudaHandle* handle) {
-    uint32_t count = head * seqlen * (n_past + seqlen);
+    cudaStream_t stream = handle->stream;
 
-    llm_scale_diag_mask_inf_float_gpu<<<GET_BLOCKS(count), CUDA_NUM_THREADS>>>(
-            count, dst, src0, scale, n_past, seqlen, head);
+    constexpr int kBlockSize = 32;
+    const int block_y = (seqlen + kBlockSize - 1) / kBlockSize;
+    const int block_x = (past + seqlen + kBlockSize - 1) / kBlockSize;
+    const dim3 block_dims(kBlockSize, kBlockSize, 1);
+    const dim3 block_nums(block_x, block_y, head);
+
+    llm_scale_diag_mask_inf_float_gpu<<<block_nums, block_dims, 0, stream>>>(
+            src, dst, past, seqlen, head, scale);
 }
 
-__global__ void llm_diag_mask_inf_float_gpu(
-        uint32_t n, float* dst, const float* src0, uint32_t n_past, uint32_t N,
-        uint32_t head) {
-    CUDA_KERNEL_LOOP(index, n) {
-        uint32_t dim_loc = index % (n_past + N);
-        uint32_t seq_loc = (index / (n_past + N)) % N;
-        if (dim_loc > n_past + seq_loc) {
-            dst[index] = -INFINITY;
-        }
-    }
+__global__ void diag_mask_inf_f32(
+        const float* src, float* dst, const int past, const int len,
+        const int head_dim) {
+    const int head = blockIdx.z;
+    const int row = blockIdx.y * blockDim.y + threadIdx.y;
+    const int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (col >= len || row >= len || head >= head_dim)
+        return;
+
+    const int row_stride = len + past;
+    const int head_stride = len * (len + past);
+
+    src = src + head * head_stride + row * row_stride + past;
+    dst = dst + head * head_stride + row * row_stride + past;
+    dst[col] = (col > row) ? -INFINITY : src[col];
 }
 
 void llm_diag_mask_inf_float(
-        float* dst, const float* src0, uint32_t n_past, uint32_t N, uint32_t head,
+        float* dst, const float* src, uint32_t n_past, uint32_t N, uint32_t head,
         cudaHandle* handle) {
-    uint32_t count = head * N * (N + n_past);
-
-    llm_diag_mask_inf_float_gpu<<<GET_BLOCKS(count), CUDA_NUM_THREADS>>>(
-            count, dst, src0, n_past, N, head);
+    cudaStream_t stream = handle->stream;
+    constexpr int kBlockSize = 32;
+    const int block_n = (N + kBlockSize - 1) / kBlockSize;
+    const dim3 block_dims(kBlockSize, kBlockSize, 1);
+    const dim3 block_nums(block_n, block_n, head);
+    diag_mask_inf_f32<<<block_nums, block_dims, 0, stream>>>(src, dst, n_past, N, head);
 }
 
 void llm_permute_compute_float(
@@ -531,78 +579,45 @@ void llm_permute_compute_float(
 /**
  * dst :head *seqlen *(seql)
  */
-__global__ void llm_matmul_compute_with_head_stride_float_gpu(
-        uint32_t n, float* dst, const float* srck, const float* srcq, uint32_t seqlen,
-        uint32_t embd, uint32_t head, uint32_t nr_past) {
-    CUDA_KERNEL_LOOP(index, n) {
-        uint32_t sub_embd = embd / head;
-        uint32_t line_stride = embd;
-        uint32_t head_loc = index / (seqlen * (seqlen + nr_past));
-        uint32_t seq_loc = (index / (seqlen + nr_past)) % seqlen;
-        uint32_t line_loc = index % (seqlen + nr_past);
-
-        auto p_srcq = srcq + head_loc * sub_embd + seq_loc * line_stride;
-        auto p_srck = srck + head_loc * sub_embd + line_loc * line_stride;
-        float sum = 0.0;
-
-        for (uint32_t k = 0; k < sub_embd; k++) {
-            sum += p_srck[k] * p_srcq[k];
-        }
-        dst[index] = sum;
-    }
-}
 
 void llm_matmul_compute_with_head_stride_float(
         float* dst, const float* srck, const float* srcq, uint32_t seqlen,
         uint32_t embd, uint32_t head, uint32_t nr_past, cudaHandle* handle) {
-    // 用于计算query和key的点积
-    uint32_t count = seqlen * head * (seqlen + nr_past);
-    llm_matmul_compute_with_head_stride_float_gpu<<<
-            GET_BLOCKS(count), CUDA_NUM_THREADS>>>(
-            count, dst, srck, srcq, seqlen, embd, head, nr_past);
-}
-
-size_t llm_matmul_get_workspace_float(uint32_t M, uint32_t N, uint32_t K) {
-    return M * K * dtype_in_byte(DType::Int8) / dtype_block_size(DType::Int8);
-}
-
-size_t llm_matmul_get_workspace_float_float(uint32_t M, uint32_t N, uint32_t K) {
-    return 0;
-}
-
-/**
- *  dst :seq * head * subdim
- *
- */
-__global__ void llm_head_batched_matmul_compute_float_gpu(
-        uint32_t n, float* dst, const float* v, const float* qk, uint32_t seqlen,
-        uint32_t embd, uint32_t head, uint32_t nr_past) {
-    uint32_t sub_embd = embd / head;
-    uint32_t length = nr_past + seqlen;
-    CUDA_KERNEL_LOOP(index, n) {
-        uint32_t seq_loc = (index / embd);
-
-        uint32_t head_loc = (index / sub_embd) % head;
-
-        uint32_t sub_embed_loc = index % sub_embd;
-
-        auto p_qk = qk + head_loc * seqlen * length + seq_loc * length;
-        auto p_v = v + head_loc * sub_embd + sub_embed_loc;
-        float sum = 0.0;
-
-        for (uint32_t k = 0; k < length; k++) {
-            sum += p_v[k * embd] * p_qk[k];
-        }
-        dst[index] = sum;
+    uint32_t head_embd = embd / head;
+    uint32_t M = seqlen;
+    uint32_t N = seqlen + nr_past;
+    uint32_t K = head_embd;
+    cudaStream_t stream = handle->stream;
+    cublasHandle_t cublas_handle = handle->cublas_handle;
+    float alpha = 1.f;
+    float beta = 0.f;
+    CUBLAS_CHECK(cublasSetStream(cublas_handle, stream));
+    for (uint32_t h = 0; h < head; h++) {
+        CUBLAS_CHECK(cublasSgemm(
+                cublas_handle, CUBLAS_OP_T, CUBLAS_OP_N, N, M, K, &alpha,
+                srck + h * head_embd, embd, srcq + h * head_embd, embd, &beta,
+                dst + h * M * N, N));
     }
 }
 
 void llm_head_batched_matmul_compute_float(
         float* dst, const float* v, const float* qk, uint32_t seqlen, uint32_t embd,
         uint32_t head, uint32_t nr_past, cudaHandle* handle) {
-    uint32_t count = seqlen * embd;
-    llm_head_batched_matmul_compute_float_gpu<<<GET_BLOCKS(count), CUDA_NUM_THREADS>>>(
-            count, dst, v, qk, seqlen, embd, head, nr_past);
+    uint32_t head_embd = embd / head;
+    uint32_t M = seqlen;
+    uint32_t K = seqlen + nr_past;
+    uint32_t N = head_embd;
+    cudaStream_t stream = handle->stream;
+    cublasHandle_t cublas_handle = handle->cublas_handle;
+    float alpha = 1.f;
+    float beta = 0.f;
+    CUBLAS_CHECK(cublasSetStream(cublas_handle, stream));
+    for (uint32_t h = 0; h < head; h++) {
+        CUBLAS_CHECK(cublasSgemm(
+                cublas_handle, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &alpha,
+                v + h * head_embd, embd, qk + h * M * N, K, &beta, dst + h * head_embd,
+                embd));
+    }
 }
 
 void llm_glm_gmask_inf_float(
@@ -678,6 +693,14 @@ void llm_matmul_compute_with_head_strideq_broadcastk_float(
 void llm_head_batched_matmul_broadcastv_float(
         float* dst, const float* v, const float* qk, uint32_t seqlen, uint32_t embd,
         uint32_t head, uint32_t query_group_num, uint32_t nr_past, cudaHandle* handle) {
+}
+
+size_t llm_matmul_get_workspace_float(uint32_t M, uint32_t N, uint32_t K) {
+    return 0;
+}
+
+size_t llm_matmul_get_workspace_float_float(uint32_t M, uint32_t N, uint32_t K) {
+    return 0;
 }
 }  // namespace gpu
 }  // namespace inferllm
