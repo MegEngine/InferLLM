@@ -7,7 +7,7 @@ InferLLM is a lightweight LLM model inference framework that mainly references a
 - High efficiency, ported most of the kernels in llama.cpp.
 - Defined a dedicated KVstorage type for easy caching and management.
 - Compatible with multiple model formats (currently only supporting alpaca Chinese and English int4 models).
-- Currently only supports CPU, mainly Arm and x86 platforms, and can be deployed on mobile phones, with acceptable speed.
+- Currently only supports CPU, optimized for Arm, x86 and riscv-vector. And it can be deployed on mobile phones, with acceptable speed.
 
 In short, InferLLM is a simple and efficient LLM CPU inference framework that can deploy quantized models in LLM locally and has good inference speed.
 
@@ -37,6 +37,8 @@ If it is executed locally, execute `./chatglm -m chatglm-q4.bin -t 4` directly. 
 ![x86 running](./assets/ChatGLM-x86.gif )
 - android is xiaomi9，Qualcomm SM8150 Snapdragon 855
 ![android running](./assets/arm-mi9.gif)
+- CPU is SG2042, with riscv-vector 0.7, 64 threads
+![sg2042 running](./assets/sg2042.gif)
 
 According to [x86 profiling result](./docs/profile.md), we strongly advise using 4 threads.
 

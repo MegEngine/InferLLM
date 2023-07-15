@@ -6,7 +6,7 @@ InferLLM 是一个非常轻量的 LLM 模型推理框架，主要参考和借鉴
 - 运行高效，将 llama.cpp 中大多数的 kernel 都进行了移植
 - 定义了专门的 KVstorage 类型，方便缓存和管理
 - 可以兼容多种模型格式（支持 alpaca 中文和英文的 int4 模型）
-- 目前只支持 CPU，主要是 Arm 和 x86 平台，可以在手机上部署，速度在可以接受的范围
+- 目前只支持 CPU，为 Arm，x86，riscv-vector平台优化，可以在手机上部署，速度在可以接受的范围
 
 总之 InferLLM 是一个简单高效的 LLM CPU 推理框架，可以本地部署 LLM 中的量化模型，推理速度还不错。
 
@@ -30,8 +30,11 @@ export NDK_ROOT=/path/to/ndk
 ### 运行 InferLLM
 如果是本执行直接执行 `./alpaca -m chinese-alpaca-7b-q4.bin -t 4`，如果要在手机上执行，可以使用 adb 命令把 alpaca 和模型文件拷贝到手机上，然后执行 `adb shell ./alpaca -m chinese-alpaca-7b-q4.bin -t 4`。下面是运行时的截屏，
 - x86 芯片是：Intel(R) Xeon(R) CPU E5-2620 v4 @ 2.10GHz
+![x86执行](./assets/x86.gif)
 - 手机是 xiaomi9，Qualcomm SM8150 Snapdragon 855
-![x86执行](./assets/x86.gif) ![手机执行](./assets/android.gif)
+![手机执行](./assets/android.gif)
+- CPU 是 SG2042，vector为0.7版本，64线程
+![SG2042执行](./assets/sg2042.gif)
 
 根据 [x86测速结果](./docs/profile.md)，我们推荐使用 4 线程。
 
