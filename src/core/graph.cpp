@@ -193,6 +193,7 @@ void Graph::execute(
                 logist.data(), m_output->ptr(), logist.size() * sizeof(float), true);
     }
     m_device->sync();
+    m_output->recall_data();
 }
 void Graph::reset_ctx() {
     for (size_t i = 0; i < m_modules.size(); i++) {

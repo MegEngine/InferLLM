@@ -381,13 +381,16 @@ void llm_rope_compute_float(
 
     INFER_ASSERT(n_rot <= 2048, "n_rot is two large.");
     INFER_ASSERT(n_rot % 2 == 0, "n_rot must be even.");
-    const dim3 block_dims(n_rot / 2, 1, 1);
-    const dim3 block_nums(head, seqlen, 1);
+
     //! offset to nr_past
     if (m == RotMode::Mode1) {
         src = src + n_past * head_embd * head;
         dst = dst + n_past * head_embd * head;
+        seqlen = seqlen - n_past;
     }
+    const dim3 block_dims(n_rot / 2, 1, 1);
+    const dim3 block_nums(head, seqlen, 1);
+
     if (m == RotMode::ModelRotHalf) {
         rope_compute_float<true><<<block_nums, block_dims, 0, stream>>>(
                 dst, src, theta_scale, position_offset, n_rot, seqlen, head, head_embd);
