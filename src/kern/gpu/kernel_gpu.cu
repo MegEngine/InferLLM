@@ -353,7 +353,7 @@ __global__ void rope_compute_float(
         return;
     }
 
-    const float theta = position_offset * powf(theta_scale, rot);
+    const float theta = (position_offset + seq) * powf(theta_scale, rot);
     const float sin_theta = sinf(theta);
     const float cos_theta = cosf(theta);
 
@@ -604,18 +604,19 @@ void llm_head_batched_matmul_compute_float(
         float* dst, const float* v, const float* qk, uint32_t seqlen, uint32_t embd,
         uint32_t head, uint32_t nr_past, cudaHandle* handle) {
     uint32_t head_embd = embd / head;
-    uint32_t M = seqlen;
+    uint32_t M = head_embd;
     uint32_t K = seqlen + nr_past;
-    uint32_t N = head_embd;
+    uint32_t N = seqlen;
     cudaStream_t stream = handle->stream;
     cublasHandle_t cublas_handle = handle->cublas_handle;
     float alpha = 1.f;
     float beta = 0.f;
+
     CUBLAS_CHECK(cublasSetStream(cublas_handle, stream));
     for (uint32_t h = 0; h < head; h++) {
         CUBLAS_CHECK(cublasSgemm(
-                cublas_handle, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &alpha,
-                v + h * head_embd, embd, qk + h * M * N, K, &beta, dst + h * head_embd,
+                cublas_handle, CUBLAS_OP_N, CUBLAS_OP_N, M, N, K, &alpha,
+                v + h * head_embd, embd, qk + h * K * N, K, &beta, dst + h * head_embd,
                 embd));
     }
 }

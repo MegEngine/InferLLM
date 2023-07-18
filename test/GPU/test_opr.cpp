@@ -97,14 +97,16 @@ TEST_F(GPU, TestLlamaAttention) {
     for (auto dtype : {DType::Float32/*, DType::Int4*/}) {
         uint32_t ctx = 128;
         uint32_t layer_id = 0;
+        checker.set_epsilon(5e-1);
         checker.set_weight_dtype(0, dtype);
         checker.set_weight_dtype(1, dtype);
         checker.set_weight_dtype(2, dtype);
-        for (uint32_t seqlen : {1/*, 4, 32*/}) {
-            for (uint32_t dim : {128}) {
-                for (uint32_t head : {16}) {
+        for (uint32_t seqlen : {2, 5}) {
+            for (uint32_t dim : {128, 4096}) {
+                for (uint32_t head : {16, 32}) {
                     for (uint32_t rot : {dim / head}) {
-                        checker.create_opr(dim, rot, ctx, head, layer_id, DType::Float32);
+                        checker.create_opr(
+                                dim, rot, ctx, head, layer_id, DType::Float32);
                         checker.exec({TensorShape{seqlen, dim}});
                     }
                 }
