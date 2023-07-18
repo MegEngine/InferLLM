@@ -337,8 +337,7 @@ void llm_norm_compute_float(
         const float* src, float* dst, uint32_t seq_len, uint32_t embd, float eps,
         cudaHandle* handle) {
     cudaStream_t stream = handle->stream;
-    norm_f32<<<seq_len, kNumWaves, 0, stream>>>(
-            src, dst,  embd, eps);
+    norm_f32<<<seq_len, kNumWaves, 0, stream>>>(src, dst, embd, eps);
 }
 
 template <bool halfmode>

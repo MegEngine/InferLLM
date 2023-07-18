@@ -116,15 +116,33 @@ GPUDevice::~GPUDevice() {
     CUBLAS_CHECK(cublasDestroy(m_handle.cublas_handle));
 }
 
-void GPUDevice::host2device_copy(void* device, const void* host, size_t size) {
-    CUDA_CHECK(cudaMemcpy(device, host, size, cudaMemcpyHostToDevice));
+void GPUDevice::host2device_copy(
+        void* device, const void* host, size_t size, bool async) {
+    if (async) {
+        CUDA_CHECK(cudaMemcpyAsync(
+                device, host, size, cudaMemcpyHostToDevice, m_handle.stream));
+    } else {
+        CUDA_CHECK(cudaMemcpy(device, host, size, cudaMemcpyHostToDevice));
+    }
 }
 
-void GPUDevice::device2host_copy(void* host, const void* device, size_t size) {
-    CUDA_CHECK(cudaMemcpy(host, device, size, cudaMemcpyDeviceToHost));
+void GPUDevice::device2host_copy(
+        void* host, const void* device, size_t size, bool async) {
+    if (async) {
+        CUDA_CHECK(cudaMemcpyAsync(
+                host, device, size, cudaMemcpyDeviceToHost, m_handle.stream));
+    } else {
+        CUDA_CHECK(cudaMemcpy(host, device, size, cudaMemcpyDeviceToHost));
+    }
 }
 
-void GPUDevice::device2device_copy(void* dst, const void* src, size_t size) {
-    CUDA_CHECK(cudaMemcpy(dst, src, size, cudaMemcpyDeviceToDevice));
+void GPUDevice::device2device_copy(
+        void* dst, const void* src, size_t size, bool async) {
+    if (async) {
+        CUDA_CHECK(cudaMemcpyAsync(
+                dst, src, size, cudaMemcpyDeviceToDevice, m_handle.stream));
+    } else {
+        CUDA_CHECK(cudaMemcpy(dst, src, size, cudaMemcpyDeviceToDevice));
+    }
 }
 #endif

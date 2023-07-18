@@ -40,11 +40,16 @@ public:
 
     virtual void deactive() {}
 
-    virtual void host2device_copy(void* device, const void* host, size_t size) = 0;
+    virtual void host2device_copy(
+            void* device, const void* host, size_t size, bool async = false) = 0;
 
-    virtual void device2host_copy(void* host, const void* device, size_t size) = 0;
+    virtual void device2host_copy(
+            void* host, const void* device, size_t size, bool async = false) = 0;
 
-    virtual void device2device_copy(void* dst, const void* src, size_t size) = 0;
+    virtual void device2device_copy(
+            void* dst, const void* src, size_t size, bool async = false) = 0;
+
+    virtual void sync() = 0;
 
 protected:
     std::unique_ptr<Kernel> m_kernel;
@@ -65,17 +70,22 @@ public:
 
     void deactive() override { m_thread_pool->deactive(); }
 
-    void host2device_copy(void* device, const void* host, size_t size) override {
+    void host2device_copy(
+            void* device, const void* host, size_t size, bool async = false) override {
         memcpy(device, host, size);
     }
 
-    void device2host_copy(void* host, const void* device, size_t size) override {
+    void device2host_copy(
+            void* host, const void* device, size_t size, bool async = false) override {
         memcpy(host, device, size);
     }
 
-    void device2device_copy(void* dst, const void* src, size_t size) override {
+    void device2device_copy(
+            void* dst, const void* src, size_t size, bool async = false) override {
         memcpy(dst, src, size);
     }
+
+    void sync() override {}
 
     ~CPUDevice();
 
@@ -87,11 +97,9 @@ private:
 class GPUDevice : public Device {
 public:
     GPUDevice(int device) : Device() {
-        CUDA_CHECK(cudaSetDevice(device));
+        CUDA_CHECK(cudaSetDevice(1));
         CUDA_CHECK(cudaStreamCreate(&(m_handle.stream)));
         CUBLAS_CHECK(cublasCreate(&(m_handle.cublas_handle)));
-        CUBLAS_CHECK(
-                cublasSetMathMode(m_handle.cublas_handle, CUBLAS_TF32_TENSOR_OP_MATH));
         m_kernel = make_unique<Kernel>(KernelType::GPU);
         m_kernel->set_handle(&m_handle);
     }
@@ -110,11 +118,16 @@ public:
 
     void aligned_free(void* ptr) override { CUDA_CHECK(cudaFree(ptr)); }
 
-    void host2device_copy(void* device, const void* host, size_t size) override;
+    void host2device_copy(
+            void* device, const void* host, size_t size, bool async = false) override;
 
-    void device2host_copy(void* host, const void* device, size_t size) override;
+    void device2host_copy(
+            void* host, const void* device, size_t size, bool async = false) override;
 
-    void device2device_copy(void* dst, const void* src, size_t size) override;
+    void device2device_copy(
+            void* dst, const void* src, size_t size, bool async = false) override;
+
+    void sync() override { CUDA_CHECK(cudaStreamSynchronize(m_handle.stream)); }
 
 private:
     cudaHandle m_handle;

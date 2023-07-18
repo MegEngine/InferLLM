@@ -61,7 +61,7 @@ public:
         return opt::Space<Id, Args...>::get(std::forward<Args>(args)...);
     }
 
-    ThreadPool* m_thread_pool;
+    ThreadPool* m_thread_pool = nullptr;
     KernelType m_kernel_type;
 #if ENABLE_GPU
     void set_handle(cudaHandle* handle) { m_handle = handle; }
