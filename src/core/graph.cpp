@@ -181,7 +181,7 @@ void Graph::execute(
     m_input->resume_user_count();
     m_input->prepare_data();
     m_device->host2device_copy(
-            m_input->ptr(), in_token.data(), in_token.size() * sizeof(int32_t));
+            m_input->ptr(), in_token.data(), in_token.size() * sizeof(int32_t), true);
     INFER_ASSERT(
             m_output->length() == logist.size(),
             "output length is not match with logist size");
@@ -190,8 +190,9 @@ void Graph::execute(
     }
     if (!prefill) {
         m_device->device2host_copy(
-                logist.data(), m_output->ptr(), logist.size() * sizeof(float));
+                logist.data(), m_output->ptr(), logist.size() * sizeof(float), true);
     }
+    m_device->sync();
 }
 void Graph::reset_ctx() {
     for (size_t i = 0; i < m_modules.size(); i++) {
