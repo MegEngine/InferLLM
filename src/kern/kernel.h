@@ -12,7 +12,7 @@
 #elif INFER_ARM
 #include "kern/optimized/arm/kernel.h"
 #elif INFER_RVV
-#include "kern/optimized/rv64/kernel.h"
+#include "kern/optimized/rvv/kernel.h"
 #else
 #include "kern/naive/naive.h"
 #endif
