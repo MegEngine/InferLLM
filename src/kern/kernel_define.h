@@ -16,7 +16,8 @@ using InData = std::vector<const Dtype*>;
 
 enum class KernelID {
     EmbeddingGetInt4Float = 0,
-    EmbeddingGetFloatFloat = 1,
+    EmbeddingGetInt8Float,
+    EmbeddingGetFloatFloat,
     ElemwiseFloat,
     ElemwiseFloatScale,
     ElemwiseBroadcastDim0Src1Float,
@@ -24,6 +25,7 @@ enum class KernelID {
     RmsNormFloat,
     SoftmaxFloat,
     MatmulInt4Float,
+    MatmulInt8Float,
     MatmulFloatFloat,
     MatmulWithHeadStrideFloat,
     //! multi query attention, q*kT

@@ -24,6 +24,22 @@ TaskSet llm_embedding_get_int4_float(
     return TaskSet{{task, len_seq}};
 }
 
+TaskSet llm_embedding_get_int8_float(
+        const void* weights, const uint32_t* index, float* dst, uint32_t len_seq,
+        uint32_t embd) {
+    auto task = [=](const TaskId& id) {
+        for (uint32_t i = id.start; i < id.end; ++i) {
+            const int row = index[i];
+            const int weight_stride =
+                    embd * dtype_in_byte(DType::Int8) / dtype_block_size(DType::Int8);
+            dequantize_row_q8_0_reference(
+                    (static_cast<const char*>(weights) + row * weight_stride),
+                    dst + i * embd, embd);
+        }
+    };
+    return TaskSet{{task, len_seq}};
+}
+
 TaskSet llm_embedding_get_float_float(
         const float* weights, const uint32_t* index, float* dst, uint32_t len_seq,
         uint32_t embd) {
@@ -255,6 +271,41 @@ TaskSet llm_matmul_compute_int4_float(
                 int8_t* src = q_src + m * weight_q80_stride;
                 dst[m * N + n] =
                         vec_vec_dot_q40_with_q80_reference(K, q_weight, src) + b;
+            }
+        }
+    };
+    return TaskSet{{task1, M}, {task2, N}};
+}
+
+TaskSet llm_matmul_compute_int8_float(
+        float* dst, const void* src0, const float* bias, const float* src1, uint32_t M,
+        uint32_t N, uint32_t K, void* workspace, uint32_t size) {
+    //! src0 is quantized weights, weights store in 32 data as block and a block
+    //! share the same scale, src1 is featureMap. src0 layout is {N,
+    //! K}, src1 layout is {M, K}, the dst is {M, N}
+    INFER_ASSERT(sizeof(float) * K <= size, "workspace is not enough.");
+    uint32_t weight_q80_stride =
+            K * dtype_in_byte(DType::Int8) / dtype_block_size(DType::Int8);
+    //! dequantize input, and store in workspace
+    //! becuase the input is small than the weights, quantized the input will
+    //! reduce the memory traffic
+    auto task1 = [=](const TaskId& id) {
+        for (uint32_t m = id.start; m < id.end; m++) {
+            BlockQ80* q_src1 =
+                    (BlockQ80*)(static_cast<uint8_t*>(workspace) + m * weight_q80_stride);
+            quantize_row_q8_0_reference(src1 + m * K, q_src1, K);
+        }
+    };
+    int8_t* q_src = static_cast<int8_t*>(workspace);
+    auto task2 = [=](const TaskId& id) {
+        for (uint32_t n = id.start; n < id.end; n++) {
+            const void* q_weight =
+                    static_cast<const uint8_t*>(src0) + n * weight_q80_stride;
+            float b = bias ? bias[n] : 0.0f;
+            for (uint32_t m = 0; m < M; m++) {
+                int8_t* src = q_src + m * weight_q80_stride;
+                dst[m * N + n] =
+                        vec_vec_dot_q80_with_q80_reference(K, q_weight, src) + b;
             }
         }
     };

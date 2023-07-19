@@ -1,4 +1,5 @@
 #include <assert.h>
+#include "kern/naive/quantize.h"
 #include "math.h"
 #include "string.h"
 #include "utils.h"
@@ -12,22 +13,6 @@ using namespace inferllm;
 
 namespace inferllm {
 namespace opt {
-
-TaskSet llm_embedding_get_int4_float(
-        const void* weights, const uint32_t* index, float* dst, uint32_t len_seq,
-        uint32_t embd) {
-    auto task = [=](const TaskId& id) {
-        for (uint32_t i = id.start; i < id.end; ++i) {
-            const int row = index[i];
-            const int weight_stride =
-                    embd * dtype_in_byte(DType::Int4) / dtype_block_size(DType::Int4);
-            dequantize_row_q4_0(
-                    (static_cast<const char*>(weights) + row * weight_stride),
-                    dst + i * embd, embd);
-        }
-    };
-    return TaskSet{{task, len_seq}};
-}
 
 TaskSet llm_elemwise_compute_float(
         InData<float> srcs, float* dst, size_t length, ElemMode mode) {
@@ -166,17 +151,20 @@ TaskSet llm_matmul_compute_int4_float(
                     auto& px = x[n * q4off + i];
                     auto& py = y[m * q8off + i];
 
+                    int ret;
                     VSET1(e32, m1);
                     asm volatile("vmv.s.x v0, x0\n");
+                    auto pxx = px.qs;
+                    auto pyy = py.qs;
                     for (int sz = 0; sz < QK80;) {
                         int rsz = QK80 - sz;
                         int vl;
                         asm volatile(
                                 "vsetvl        x0, %[sz4], %[vt32]\n"  // load q4
                                 "vlbu.v        v16,  (%[x])\n"
-                                "vand.vi       v24, v16, 0b1111\n"     // save low part
+                                "vand.vi       v24, v16, 0b1111\n"  // save low part
                                 "vsrl.vi       v16, v16, 4\n"
-                                "vsll.vi       v16, v16, 16\n"         // make high part
+                                "vsll.vi       v16, v16, 16\n"  // make high part
                                 "vor.vv        v16, v16, v24\n"
 
                                 "vsetvl        %[vl], %[sz8], %[vt16]\n"  // load q8
@@ -187,11 +175,74 @@ TaskSet llm_matmul_compute_int4_float(
                                 "vwredsum.vs   v0, v16, v0\n"
                                 : [vl] "=r"(vl)
                                 : [sz4] "r"(rsz / 2), [vt32] "r"(vt32), [sz8] "r"(rsz),
-                                  [vt16] "r"(vt16), [x] "r"(&px.qs[sz / 2]),
-                                  [y] "r"(&py.qs[sz]), [ratio] "f"(px.d * py.d));
+                                  [vt16] "r"(vt16), [x] "r"(pxx), [y] "r"(pyy)
+                                : "memory");
                         sz += vl;
+                        pxx += sz / 2;
+                        pyy += sz;
                     }
+                    VSET1(e32, m1);
+                    asm volatile("vmv.x.s %[init], v0\n" : [init] "=r"(ret));
+                    sumf += px.d * py.d * ret;
+                }
+                dst[m * N + n] = sumf;
+            }
+        }
+    };
+    return TaskSet{{task1, M}, {task2, N}};
+}
+
+TaskSet llm_matmul_compute_int8_float(
+        float* dst, const void* src0, const float* bias, const float* src1, uint32_t M,
+        uint32_t N, uint32_t K, void* workspace, uint32_t size) {
+    //! src0 is quantized weights, weights store in 32 data as block and a block
+    //! share the same scale, src1 is featureMap. src0 layout is {N,
+    //! K}, src1 layout is {M, K}, the dst is {M, N}
+    INFER_ASSERT(sizeof(float) * K <= size, "workspace is not enough.");
+    uint32_t q8off = K / dtype_block_size(DType::Int8);
+    const BlockQ80* x = static_cast<const BlockQ80*>(src0);
+    BlockQ80* y = static_cast<BlockQ80*>(workspace);
+
+    //! dequantize input, and store in workspace
+    //! becuase the input is small than the weights, quantized the input will
+    //! reduce the memory traffic
+    auto task1 = [=](const TaskId& id) {
+        for (uint32_t m = id.start; m < id.end; m++)
+            quantize_row_q8_0(&src1[m * K], &y[m * q8off], K);
+    };
+    auto task2 = [=](const TaskId& id) {
+        size_t lmul = mk_lmul(E16, QK80);
+        size_t vt16 = mk_vtype(E16, lmul);
+        for (uint32_t n = id.start; n < id.end; n++) {
+            float b0 = bias ? bias[n] : 0.f;
+            for (uint32_t m = 0; m < M; m++) {
+                const int nb = K / QK80;
+                float sumf = b0;
+                for (int i = 0; i < nb; i++) {
+                    auto& px = x[n * q8off + i];
+                    auto& py = y[m * q8off + i];
                     int ret;
+                    VSET1(e32, m1);
+                    asm volatile("vmv.s.x v0, x0\n");
+                    auto pxx = px.qs;
+                    auto pyy = py.qs;
+                    for (int sz = 0; sz < QK80;) {
+                        int rsz = QK80 - sz;
+                        int vl;
+                        asm volatile(
+                                "vsetvl        %[vl], %[sz8], %[vt16]\n"  // load q8
+                                "vlb.v         v16,  (%[x])\n"
+                                "vlb.v         v24,  (%[y])\n"
+                                "vmul.vv       v16, v16, v24\n"  // mul and sum
+                                "vwredsum.vs   v0, v16, v0\n"
+                                : [vl] "=r"(vl)
+                                : [sz8] "r"(rsz), [vt16] "r"(vt16), [x] "r"(pxx),
+                                  [y] "r"(pyy)
+                                : "memory");
+                        sz += vl;
+                        pxx += vl;
+                        pyy += vl;
+                    }
                     VSET1(e32, m1);
                     asm volatile("vmv.x.s %[init], v0\n" : [init] "=r"(ret));
                     sumf += px.d * py.d * ret;

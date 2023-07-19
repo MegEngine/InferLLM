@@ -11,6 +11,9 @@ namespace naive {
 TaskSet llm_embedding_get_int4_float(
         const void* weights, const uint32_t* index, float* dst, uint32_t len_seq,
         uint32_t embd);
+TaskSet llm_embedding_get_int8_float(
+        const void* weights, const uint32_t* index, float* dst, uint32_t len_seq,
+        uint32_t embd);
 TaskSet llm_embedding_get_float_float(
         const float* weights, const uint32_t* index, float* dst, uint32_t len_seq,
         uint32_t embd);
@@ -36,6 +39,9 @@ TaskSet llm_softmax_compute_float(
 
 // compute the softmax of the last dim of src, and store the result in dst
 TaskSet llm_matmul_compute_int4_float(
+        float* dst, const void* src0, const float* bias, const float* src1, uint32_t M,
+        uint32_t N, uint32_t K, void* workspace, uint32_t size);
+TaskSet llm_matmul_compute_int8_float(
         float* dst, const void* src0, const float* bias, const float* src1, uint32_t M,
         uint32_t N, uint32_t K, void* workspace, uint32_t size);
 TaskSet llm_matmul_compute_float_float(
@@ -103,9 +109,11 @@ PartialImplementKernel(
 PartialImplementKernel(NormFloat, llm_norm_compute_float);
 PartialImplementKernel(RmsNormFloat, llm_rms_norm_compute_float);
 PartialImplementKernel(EmbeddingGetInt4Float, llm_embedding_get_int4_float);
+PartialImplementKernel(EmbeddingGetInt8Float, llm_embedding_get_int8_float);
 PartialImplementKernel(EmbeddingGetFloatFloat, llm_embedding_get_float_float);
 PartialImplementKernel(SoftmaxFloat, llm_softmax_compute_float);
 PartialImplementKernel(MatmulInt4Float, llm_matmul_compute_int4_float);
+PartialImplementKernel(MatmulInt8Float, llm_matmul_compute_int8_float);
 PartialImplementKernel(MatmulFloatFloat, llm_matmul_compute_float_float);
 PartialImplementKernel(
         MatmulWithHeadStrideFloat, llm_matmul_compute_with_head_stride_float);
@@ -125,6 +133,7 @@ PartialImplementKernel(
         HeadBatchedMatmulBroadCastVFloat, llm_head_batched_matmul_broadcastv_float);
 
 PartialImplementSpace(MatmulInt4Float, llm_matmul_get_workspace_float);
+PartialImplementSpace(MatmulInt8Float, llm_matmul_get_workspace_float);
 PartialImplementSpace(MatmulFloatFloat, llm_matmul_get_workspace_float_float);
 
 }  // namespace naive
