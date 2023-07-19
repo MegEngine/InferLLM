@@ -11,7 +11,7 @@
 #include "kern/optimized/x86/kernel.h"
 #elif INFER_ARM
 #include "kern/optimized/arm/kernel.h"
-#elif INFER_RV64
+#elif INFER_RVV
 #include "kern/optimized/rv64/kernel.h"
 #else
 #include "kern/naive/naive.h"
@@ -28,7 +28,7 @@ public:
     Kernel(KernelType kernel_type) : m_kernel_type(kernel_type) {}
     Kernel(KernelType kernel_type, ThreadPool* thread_pool)
             : m_kernel_type(kernel_type), m_thread_pool(thread_pool) {
-#ifdef INFER_RV64
+#ifdef INFER_RVV
         opt::init();
 #endif
     }

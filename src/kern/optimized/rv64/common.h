@@ -30,14 +30,14 @@ inline size_t mk_lmul(SEW sew, int sz) {
 }
 
 inline size_t mk_vtype(SEW sew, size_t LMUL) {
-#if INFER_RV64 > 107
+#if INFER_RVV > 107
     return (sew << 3) | LMUL;
 #else
     return (sew << 2) | LMUL;
 #endif
 }
 
-#if INFER_RV64 > 107
+#if INFER_RVV > 107
 #define VSET1(e, m) asm volatile("vsetivli x0, 1, " #e ", " #m);
 #else
 #define VSET1(e, m) asm volatile("vsetvli x0, %[sz], " #e ", " #m ::[sz] "r"(1));
