@@ -7,7 +7,7 @@ InferLLM is a lightweight LLM model inference framework that mainly references a
 - High efficiency, ported most of the kernels in llama.cpp.
 - Defined a dedicated KVstorage type for easy caching and management.
 - Compatible with multiple model formats (currently only supporting alpaca Chinese and English int4 models).
-- Currently only supports CPU, optimized for Arm, x86 and riscv-vector. And it can be deployed on mobile phones, with acceptable speed.
+- Currently supports CPU and GPU, optimized for Arm, x86, CUDA and riscv-vector. And it can be deployed on mobile phones, with acceptable speed.
 
 In short, InferLLM is a simple and efficient LLM CPU inference framework that can deploy quantized models in LLM locally and has good inference speed.
 
@@ -23,6 +23,8 @@ cd build
 cmake ..
 make
 ```
+GPU is disabled default, if you want to enable GPU, please use `cmake -DENABLE_GPU=ON ..` to enable GPU. Now only CUDA is supported, before use CUDA, please install CUDA toolkit first. 
+
 #### Android cross compilation
 According to the cross compilation, you can use the pre-prepared tools/android_build.sh script. You need to install NDK in advance and configure the path of NDK to the NDK_ROOT environment variable.
 ```shell
@@ -33,6 +35,9 @@ export NDK_ROOT=/path/to/ndk
 Running ChatGLM model please refer to [ChatGLM model documentation](./application/chatglm/Readme.md).
 
 If it is executed locally, execute `./chatglm -m chatglm-q4.bin -t 4` directly. If you want to execute it on your mobile phone, you can use the adb command to copy alpaca and the model file to your mobile phone, and then execute `adb shell ./chatglm -m chatglm-q4.bin -t 4`. 
+
+The default device is CPU, if you want to inference with GPU, please use `./chatglm -m chatglm-q4.bin -g GPU` to specify the GPU device.
+
 - x86 is：Intel(R) Xeon(R) CPU E5-2620 v4 @ 2.10GHz
 ![x86 running](./assets/ChatGLM-x86.gif )
 - android is xiaomi9，Qualcomm SM8150 Snapdragon 855

@@ -6,7 +6,7 @@ InferLLM 是一个非常轻量的 LLM 模型推理框架，主要参考和借鉴
 - 运行高效，将 llama.cpp 中大多数的 kernel 都进行了移植
 - 定义了专门的 KVstorage 类型，方便缓存和管理
 - 可以兼容多种模型格式（支持 alpaca 中文和英文的 int4 模型）
-- 目前只支持 CPU，为 Arm，x86，riscv-vector平台优化，可以在手机上部署，速度在可以接受的范围
+- 目前支持 CPU 和 GPU，专门为 Arm，x86，CUDA，riscv-vector平台优化，可以在手机上部署，速度在可以接受的范围
 
 总之 InferLLM 是一个简单高效的 LLM CPU 推理框架，可以本地部署 LLM 中的量化模型，推理速度还不错。
 
@@ -21,6 +21,8 @@ cd build
 cmake ..
 make
 ```
+GPU 默认是关闭的，如果要开启 GPU，请使用 `cmake -DENABLE_GPU=ON ..` 开启 GPU。目前只支持 CUDA，使用 CUDA 之前请先安装 CUDA toolkit。
+
 #### 安卓交叉编译
 按照交叉编译可以使用我们预先准备好的 tools/android_build.sh 脚本，需要提前安装好 NDK, 并把 NDK 的路径配置到 NDK_ROOT 环境变量中。
 ```shell
@@ -37,6 +39,8 @@ export NDK_ROOT=/path/to/ndk
 ![SG2042执行](./assets/sg2042.gif)
 
 根据 [x86测速结果](./docs/profile.md)，我们推荐使用 4 线程。
+
+默认使用的设备是 CPU，如果要使用 GPU 推理，请使用 `./alpaca -m chinese-alpaca-7b-q4.bin -g GPU` 指定 GPU 设备。
 
 ### License
 InferLLM is licensed under the Apache License, Version 2.0
