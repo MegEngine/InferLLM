@@ -6,7 +6,8 @@
 #include "kern/kernel_define.h"
 #include "kern/naive/naive.h"
 #include "kern/naive/quantize.h"
-#include "kern/optimized/rv64/common.h"
+
+#include "common.h"
 
 namespace inferllm {
 namespace opt {

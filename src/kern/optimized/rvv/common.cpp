@@ -1,7 +1,8 @@
-#include "kern/optimized/rv64/common.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+
+#include "common.h"
 
 namespace inferllm {
 namespace opt {
