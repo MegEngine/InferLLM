@@ -13,7 +13,9 @@ namespace inferllm {
 
 struct ModelConfig {
     //! dtype include 'float32','float16','int8','int4'
-    std::string compt_type;
+    std::string compt_type = "float32";
+    //! device_type include 'cpu','gpu'
+    std::string device_type = "cpu";
     uint32_t nr_thread;
     uint32_t nr_ctx;
     int32_t device_id;

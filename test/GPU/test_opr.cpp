@@ -94,21 +94,71 @@ TEST_F(GPU, TestDiagMask) {
 
 TEST_F(GPU, TestLlamaAttention) {
     Checker<LlamaAttention> checker(device(), naive_device());
-    for (auto dtype : {DType::Float32/*, DType::Int4*/}) {
+    for (auto dtype : {DType::Float32, DType::Int4}) {
         uint32_t ctx = 128;
         uint32_t layer_id = 0;
-        checker.set_epsilon(5e-1);
+        checker.set_epsilon(2);
         checker.set_weight_dtype(0, dtype);
         checker.set_weight_dtype(1, dtype);
         checker.set_weight_dtype(2, dtype);
-        for (uint32_t seqlen : {2, 5}) {
-            for (uint32_t dim : {128, 4096}) {
-                for (uint32_t head : {16, 32}) {
+        for (RotMode mode : {RotMode::Mode0, RotMode::ModelRotHalf}) {
+            for (uint32_t seqlen : {2, 5}) {
+                for (uint32_t dim : {128, 256}) {
+                    for (uint32_t head : {16, 32}) {
+                        for (uint32_t rot : {dim / head}) {
+                            checker.create_opr(
+                                    dim, rot, ctx, head, layer_id, DType::Float32,
+                                    mode);
+                            checker.exec({TensorShape{seqlen, dim}});
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+TEST_F(GPU, TestGlmAttention) {
+    Checker<GlmAttention> checker(device(), naive_device());
+    checker.set_epsilon(5e-1);
+    for (auto dtype : {DType::Float32}) {
+        uint32_t ctx = 128;
+        uint32_t layer_id = 0;
+        checker.set_weight_dtype(0, dtype);
+        checker.set_weight_dtype(1, dtype);
+        checker.set_weight_dtype(2, dtype);
+        for (uint32_t seqlen : {3, 5, 7}) {
+            for (uint32_t dim : {128, 256}) {
+                for (uint32_t head : {16}) {
                     for (uint32_t rot : {dim / head}) {
                         checker.create_opr(
-                                dim, rot, ctx, head, layer_id, DType::Float32);
+                                dim, rot, ctx, head, layer_id, DType::Float32,
+                                RotMode::Mode0);
                         checker.exec({TensorShape{seqlen, dim}});
                     }
+                }
+            }
+        }
+    }
+}
+
+TEST_F(GPU, TestGlm2MultiQueryAttention) {
+    Checker<Glm2MultiQueryAttention> checker(device(), naive_device());
+    checker.set_epsilon(5e-1);
+    uint32_t q_group = 2;
+    for (auto dtype : {DType::Float32, DType::Int4}) {
+        uint32_t ctx = 128;
+        uint32_t layer_id = 0;
+        checker.set_weight_dtype(0, dtype);
+        checker.set_weight_dtype(1, dtype);
+        checker.set_weight_dtype(2, dtype);
+        for (uint32_t seqlen : {1, 4}) {
+            for (uint32_t dim : {128}) {
+                for (uint32_t head : {32}) {
+                    checker.create_opr(
+                            dim, q_group, ctx, head, layer_id, DType::Float32,
+                            RotMode::Mode0);
+                    checker.exec({TensorShape{seqlen, dim}});
                 }
             }
         }

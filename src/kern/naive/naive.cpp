@@ -427,8 +427,7 @@ TaskSet llm_diag_mask_inf_float(
 TaskSet llm_glm_gmask_inf_float(
         float* dst, uint32_t n_past, uint32_t seqlen, uint32_t head) {
     //! set every head the last number of data to -inf of every row expect
-    //! the
-    //! last row
+    //! the last row
     const int nc = n_past + seqlen;
     auto task = [=](const TaskId& id) {
         for (int k = id.start; k < id.end; k++) {

@@ -39,16 +39,24 @@ public:
     ModelImp(const ModelConfig& config, const std::string& name)
             : m_name(name), m_config(config) {
         uint32_t nr_thread = config.nr_thread;
-        // if compile with GPU, use GPU, else use CPUDevice
-#if ENABLE_GPU
-        m_device = make_unique<GPUDevice>(0);
-#elif INFER_X86
-        m_device = make_unique<CPUDevice>(KernelType::X86, nr_thread);
+        std::string device_type = config.device_type;
+        if (device_type == "CPU" || device_type == "cpu") {
+#if INFER_X86
+            m_device = make_unique<CPUDevice>(KernelType::X86, nr_thread);
 #elif INFER_ARM
-        m_device = make_unique<CPUDevice>(KernelType::Arm, nr_thread);
+            m_device = make_unique<CPUDevice>(KernelType::Arm, nr_thread);
 #else
-        m_device = make_unique<CPUDevice>(KernelType::Naive, nr_thread);
+            m_device = make_unique<CPUDevice>(KernelType::Naive, nr_thread);
 #endif
+        } else if (
+                device_type == "GPU" || device_type == "CUDA" || device_type == "gpu") {
+            // if compile with GPU, use GPU, else use CPUDevice
+#if ENABLE_GPU
+            m_device = make_unique<GPUDevice>(0);
+#else
+            INFER_ASSERT(0, "GPU is disabled when build, please build with GPU.");
+#endif
+        }
 
         UserConfig user_config;
         user_config.compt_type = dtype_from_str(config.compt_type);

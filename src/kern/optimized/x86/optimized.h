@@ -128,7 +128,8 @@ inline float vec_vec_dot_q4_0(
     }
     return sumf;
 }
-
+//! because the gcc compiler error, we use the macro to implement the kernel
+#if defined(__AVX2__)
 INFER_ATTRIBUTE_TARGET("avx2")
 inline float vec_vec_dot_q40_with_q80(
         const int n, const void* __restrict vx, const void* __restrict vy) {
@@ -172,6 +173,7 @@ inline float vec_vec_dot_q40_with_q80(
     return hsum_float_8(acc);
 }
 
+#elif defined(__AVX__)
 INFER_ATTRIBUTE_TARGET("avx")
 inline float vec_vec_dot_q40_with_q80(
         const int n, const void* __restrict vx, const void* __restrict vy) {
@@ -228,6 +230,7 @@ inline float vec_vec_dot_q40_with_q80(
     return hsum_float_8(acc);
 }
 
+#else
 INFER_ATTRIBUTE_TARGET("default")
 inline float vec_vec_dot_q40_with_q80(
         const int n, const void* __restrict vx, const void* __restrict vy) {
@@ -262,6 +265,7 @@ inline float vec_vec_dot_q40_with_q80(
     }
     return sumf;
 }
+#endif
 
 INFER_ATTRIBUTE_TARGET("avx2")
 inline void elemwise_vector_add(

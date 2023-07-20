@@ -88,6 +88,7 @@ inline void quantize_row_q4_0(const float* __restrict x, void* __restrict vy, in
     }
 }
 
+#if defined(__AVX2__)
 INFER_ATTRIBUTE_TARGET("avx2")
 inline void dequantize_row_q4_0(const void* __restrict vx, float* __restrict y, int k) {
     assert(k % QK40 == 0);
@@ -134,6 +135,7 @@ inline void dequantize_row_q4_0(const void* __restrict vx, float* __restrict y, 
     }
 }
 
+#elif defined(__AVX__)
 INFER_ATTRIBUTE_TARGET("avx")
 inline void quantize_row_q4_0(const float* __restrict x, void* __restrict vy, int k) {
     const int nb = k / QK40;
@@ -217,6 +219,7 @@ inline void quantize_row_q4_0(const float* __restrict x, void* __restrict vy, in
     }
 }
 
+#else
 INFER_ATTRIBUTE_TARGET("default")
 inline void quantize_row_q4_0(const float* __restrict x, void* __restrict vy, int k) {
     const int nb = k / QK40;
@@ -225,6 +228,7 @@ inline void quantize_row_q4_0(const float* __restrict x, void* __restrict vy, in
     // scalar
     naive::quantize_row_q4_0_reference(x, y, k);
 }
+#endif
 
 INFER_ATTRIBUTE_TARGET("default")
 inline void dequantize_row_q4_0(const void* __restrict vx, float* __restrict y, int k) {
