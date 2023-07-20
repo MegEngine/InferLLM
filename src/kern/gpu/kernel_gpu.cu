@@ -352,7 +352,7 @@ __global__ void rope_compute_float(
         return;
     }
 
-    const float theta = position_offset * powf(theta_scale, rot);
+    const float theta = (position_offset + seq) * powf(theta_scale, rot);
     const float sin_theta = sinf(theta);
     const float cos_theta = cosf(theta);
 
@@ -460,14 +460,8 @@ __global__ void dequantize_mul_mat_vec(
         const int ib = (n_id * K + col) / QK40;  // x block index
         const int iqs = (col % QK40) / 2;        // x quant index
 
-// processing >2 values per i iter is faster for fast GPUs
 #pragma unroll
         for (int j = 0; j < vals_per_iter; j += 2) {
-            // process 2 vals per j iter
-
-            // dequantize
-            // for qr = 2 the iqs needs to increase by 1 per j iter because 2 weights
-            // per data val
             float2 v;
             const BlockQ40* x = (const BlockQ40*)dx + ib;
             const float d = x->d;
@@ -479,9 +473,6 @@ __global__ void dequantize_mul_mat_vec(
             v.x = (v.x - 8.0f) * d;
             v.y = (v.y - 8.0f) * d;
 
-            // matrix multiplication
-            // for qr = 2 the y index needs to increase by 1 per j iter because of
-            // y_offset = qk/2
             tmp += v.x * srcy[col];
             tmp += v.y * srcy[col + 1];
         }
@@ -603,92 +594,165 @@ void llm_head_batched_matmul_compute_float(
         float* dst, const float* v, const float* qk, uint32_t seqlen, uint32_t embd,
         uint32_t head, uint32_t nr_past, cudaHandle* handle) {
     uint32_t head_embd = embd / head;
-    uint32_t M = seqlen;
+    uint32_t M = head_embd;
     uint32_t K = seqlen + nr_past;
-    uint32_t N = head_embd;
+    uint32_t N = seqlen;
     cudaStream_t stream = handle->stream;
     cublasHandle_t cublas_handle = handle->cublas_handle;
     float alpha = 1.f;
     float beta = 0.f;
+
     CUBLAS_CHECK(cublasSetStream(cublas_handle, stream));
     CUBLAS_CHECK(cublasSgemmStridedBatched(
             cublas_handle, CUBLAS_OP_N, CUBLAS_OP_N, M, N, K, &alpha, v, embd,
             head_embd, qk, K, K * N, &beta, dst, embd, head_embd, head));
 }
 
+__global__ void glm_gmask_inf_f32(
+        float* dst, const int past, const int seqlen, const int head) {
+    const int index = blockIdx.x * blockDim.x + threadIdx.x;
+    const int head_id = index / seqlen;
+    const int row_id = index % seqlen;
+
+    // the laxt row not set -inf
+    if (row_id >= seqlen - 1 || head_id >= head)
+        return;
+
+    int total_seq = seqlen + past;
+    int offset = head_id * seqlen * total_seq + row_id * total_seq + total_seq - 1;
+    dst[offset] = -INFINITY;
+}
+
 void llm_glm_gmask_inf_float(
         float* dst, uint32_t n_past, uint32_t seqlen, uint32_t head,
         cudaHandle* handle) {
-    //! set every head the last number of data to -inf of every row expect
-    //! the
-    //! last row
-    // const int nc = n_past + seqlen;
-    // auto task = [=](const TaskId& id) {
-    //     for (int k = id.start; k < id.end; k++) {
-    //         for (int j = 0; j < seqlen - 1; j++) {
-    //             dst[k * nc * seqlen + j * nc + nc - 1] = -INFINITY;
-    //         }
-    //     }
-    // };
+    cudaStream_t stream = handle->stream;
+    uint32_t count = seqlen * head;
+    constexpr int kBlockSize = 32 * 32;
+    const int block_n = (count + kBlockSize - 1) / kBlockSize;
+    const dim3 block_dims(kBlockSize, 1, 1);
+    const dim3 block_nums(block_n, 1, 1);
+    glm_gmask_inf_f32<<<block_nums, block_dims, 0, stream>>>(dst, n_past, seqlen, head);
 }
+
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) < (b) ? (b) : (a))
+
+__global__ void glm_rope_compute_float(
+        float* dst, const float* src, int32_t n_past, int32_t gmask_positon,
+        int32_t seqlen, int32_t head, int32_t embd) {
+    const int seq = blockIdx.y;
+    const int h = blockIdx.x;
+    int p = threadIdx.x;
+
+    if (seq >= seqlen || h >= head || p >= embd / 2)
+        return;
+
+    int quart_embd = embd / 4;
+    int half_embd = embd / 2;
+
+    int position_id = MIN(seq + n_past, gmask_positon);
+    int block_position_id = MAX((n_past + seq) - gmask_positon, 0);
+
+    bool is_second_half = p >= quart_embd;
+
+    position_id = is_second_half ? block_position_id : position_id;
+
+    p = p % quart_embd;
+    const double theta = pow(10000.0, ((double)-2 * p) / (half_embd));
+    const double cos_theta = cos(position_id * theta);
+    const double sin_theta = sin(position_id * theta);
+
+    const float* const src_data =
+            src + seq * head * embd + h * embd + p + is_second_half * half_embd;
+    float* dst_data =
+            dst + seq * head * embd + h * embd + p + is_second_half * half_embd;
+    double x0 = src_data[0];
+    double x32 = src_data[quart_embd];
+    dst_data[0] = x0 * cos_theta - x32 * sin_theta;
+    dst_data[quart_embd] = x32 * cos_theta + x0 * sin_theta;
+}
+
 void llm_glm_rope_compute_float(
-        float* dst, const float* src0, uint32_t n_past, uint32_t gmask_positon,
+        float* dst, const float* src, uint32_t n_past, uint32_t gmask_positon,
         uint32_t seqlen, uint32_t head, uint32_t embd, cudaHandle* handle) {
-    // bool prefill = false;
-    // if (n_past == 0) {
-    //     prefill = true;
-    // }
-    // int quart_embd = embd / 4;
-    // int half_embd = embd / 2;
-    // auto task = [=](const TaskId& id) {
-    //     for (int h = id.start; h < id.end; h++) {
-    //         for (int seq = 0; seq < seqlen; seq++) {
-    //             int position_id = std::min(seq + n_past, gmask_positon);
-    //             int block_position_id =
-    //                     std::max((int)(n_past + seq) - (int)gmask_positon, 0);
-    //             for (int p = 0; p < quart_embd; p++) {
-    //                 const double theta = pow(10000.0, ((double)-2 * p) /
-    //                 (half_embd)); const double cos_theta = cos(position_id * theta);
-    //                 const double sin_theta = sin(position_id * theta);
+    cudaStream_t stream = handle->stream;
+    int half_embd = embd / 2;
+    const dim3 block_dims(half_embd, 1, 1);
+    const dim3 block_nums(head, seqlen, 1);
 
-    //                 const double cos_theta_b = cos(block_position_id * theta);
-    //                 const double sin_theta_b = sin(block_position_id * theta);
-
-    //                 //! first half
-    //                 {
-    //                     const float* const src =
-    //                             src0 + seq * head * embd + h * embd + p;
-    //                     float* dst_data = dst + seq * head * embd + h * embd + p;
-    //                     double x0 = src[0];
-    //                     double x32 = src[quart_embd];
-    //                     dst_data[0] = x0 * cos_theta - x32 * sin_theta;
-    //                     dst_data[quart_embd] = x32 * cos_theta + x0 * sin_theta;
-    //                 }
-    //                 //! second half
-    //                 {
-    //                     const float* const src =
-    //                             src0 + seq * head * embd + h * embd + half_embd + p;
-    //                     float* dst_data =
-    //                             dst + seq * head * embd + h * embd + half_embd + p;
-    //                     double x0 = src[0];
-    //                     double x32 = src[quart_embd];
-    //                     dst_data[0] = x0 * cos_theta_b - x32 * sin_theta_b;
-    //                     dst_data[quart_embd] = x32 * cos_theta_b + x0 * sin_theta_b;
-    //                 }
-    //             }
-    //         }
-    //     }
-    // };
+    glm_rope_compute_float<<<block_nums, block_dims, 0, stream>>>(
+            dst, src, n_past, gmask_positon, seqlen, head, embd);
 }
 
 void llm_matmul_compute_with_head_strideq_broadcastk_float(
         float* dst, const float* srck, const float* srcq, uint32_t seqlen,
         uint32_t embd, uint32_t head, uint32_t query_group_num, uint32_t nr_past,
-        cudaHandle* handle) {}
+        cudaHandle* handle) {
+    uint32_t head_embd = embd / head;
+    uint32_t M = seqlen;
+    uint32_t N = seqlen + nr_past;
+    uint32_t K = head_embd;
+    cudaStream_t stream = handle->stream;
+    cublasHandle_t cublas_handle = handle->cublas_handle;
+    float alpha = 1.f;
+    float beta = 0.f;
+    CUBLAS_CHECK(cublasSetStream(cublas_handle, stream));
+    uint32_t kv_head_number = head / query_group_num;
+    uint32_t stride_k = query_group_num * head_embd;
+
+    // float cpuk[query_group_num * head_embd * seqlen];
+    // float cpuq[head * head_embd * seqlen];
+    // float cpudst[head * head_embd * seqlen];
+
+    // cudaMemcpy(
+    //         cpuk, srck, sizeof(float) * query_group_num * head_embd * seqlen,
+    //         cudaMemcpyDeviceToHost);
+    // cudaMemcpy(
+    //         cpuq, srcq, sizeof(float) * head * head_embd * seqlen,
+    //         cudaMemcpyDeviceToHost);
+
+    for (int i = 0; i < query_group_num; i++) {
+        const float* srck_group = srck + i * head_embd;
+        const float* srcq_group = srcq + i * kv_head_number * head_embd;
+        float* dst_group = dst + i * kv_head_number * N * M;
+
+        CUBLAS_CHECK(cublasSgemmStridedBatched(
+                cublas_handle, CUBLAS_OP_T, CUBLAS_OP_N, N, M, K, &alpha, srck_group,
+                stride_k, 0, srcq_group, embd, head_embd, &beta, dst_group, N,
+                M * N, kv_head_number));
+    }
+    // cudaMemcpy(
+    //         cpudst, dst, sizeof(float) * head * head_embd * seqlen,
+    //         cudaMemcpyDeviceToHost);
+}
 
 void llm_head_batched_matmul_broadcastv_float(
         float* dst, const float* v, const float* qk, uint32_t seqlen, uint32_t embd,
         uint32_t head, uint32_t query_group_num, uint32_t nr_past, cudaHandle* handle) {
+    uint32_t head_embd = embd / head;
+    uint32_t M = head_embd;
+    uint32_t K = seqlen + nr_past;
+    uint32_t N = seqlen;
+    cudaStream_t stream = handle->stream;
+    cublasHandle_t cublas_handle = handle->cublas_handle;
+    float alpha = 1.f;
+    float beta = 0.f;
+    CUBLAS_CHECK(cublasSetStream(cublas_handle, stream));
+
+    uint32_t kv_head_number = head / query_group_num;
+    uint32_t stride_v = query_group_num * head_embd;
+
+    for (int i = 0; i < query_group_num; i++) {
+        const float* qk_group = qk + i * kv_head_number * K * N;
+        const float* srcv_group = v + i * head_embd;
+        float* dst_group = dst + i * kv_head_number * head_embd;
+
+        CUBLAS_CHECK(cublasSgemmStridedBatched(
+                cublas_handle, CUBLAS_OP_N, CUBLAS_OP_N, M, N, K, &alpha, srcv_group,
+                stride_v, 0, qk_group, K, K * N, &beta, dst_group, embd, head_embd,
+                kv_head_number));
+    }
 }
 
 size_t llm_matmul_get_workspace_float(uint32_t M, uint32_t N, uint32_t K) {
