@@ -223,6 +223,8 @@ DType Graph::convert_dtype(int32_t type) {
             return DType::Int4;
         case 3:
             return DType::Uint4;
+        case 4:
+            return DType::Int8;
         default:
             INFER_ASSERT(0, "unsupported weight type");
     }

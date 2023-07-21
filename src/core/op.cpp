@@ -59,14 +59,22 @@ void Embedding::execute(WorkSpace*, uint32_t) {
     auto len = input->shape()[0];
     auto kernel = get_kernel();
     if (output->dtype() == DType::Float32) {
-        if (weight_type == DType::Int4) {
+        switch (weight_type) {
+        case DType::Int4:
             kernel->operator()<KernelID::EmbeddingGetInt4Float>(
                     weight->ptr(), input->ptr<uint32_t>(), output->ptr<float>(), len,
                     m_embd);
-        } else if (weight_type == DType::Float32) {
+            break;
+        case DType::Int8:
+            kernel->operator()<KernelID::EmbeddingGetInt8Float>(
+                    weight->ptr(), input->ptr<uint32_t>(), output->ptr<float>(), len,
+                    m_embd);
+            break;
+        case DType::Float32:
             kernel->operator()<KernelID::EmbeddingGetFloatFloat>(
                     weight->ptr<float>(), input->ptr<uint32_t>(), output->ptr<float>(),
                     len, m_embd);
+            break;
         }
     } else {
         //! fp16
@@ -150,27 +158,27 @@ void MatMul::execute(WorkSpace* workspace, uint32_t) {
     void* p_workspace = workspace->ptr();
     uint32_t p_workspace_size = workspace->length();
     auto kernel = get_kernel();
-    if (src_dtype == DType::Float32 && weight_dtype == DType::Int4) {
-        float* dst = outputs()[0]->ptr<float>();
-        const void* weight = weights()[0]->ptr();
-        const float* bias = nullptr;
-        if (m_bias) {
-            bias = weights()[1]->ptr<float>();
-        }
-        const float* src = inputs()[0]->ptr<float>();
+    if (src_dtype == DType::Float32) {
+      float* dst = outputs()[0]->ptr<float>();
+      const float* bias = nullptr;
+      if (m_bias) {
+          bias = weights()[1]->ptr<float>();
+      }
+      const float* src = inputs()[0]->ptr<float>();
+      switch (weight_dtype) {
+      case DType::Int4:
         kernel->operator()<KernelID::MatmulInt4Float>(
-                dst, weight, bias, src, M, N, K, p_workspace, p_workspace_size);
-    }
-    if (src_dtype == DType::Float32 && weight_dtype == DType::Float32) {
-        float* dst = outputs()[0]->ptr<float>();
-        const float* weight = weights()[0]->ptr<float>();
-        const float* bias = nullptr;
-        if (m_bias) {
-            bias = weights()[1]->ptr<float>();
-        }
-        const float* src = inputs()[0]->ptr<float>();
+                dst, weights()[0]->ptr(), bias, src, M, N, K, p_workspace, p_workspace_size);
+        break;
+      case DType::Int8:
+        kernel->operator()<KernelID::MatmulInt8Float>(
+                dst, weights()[0]->ptr(), bias, src, M, N, K, p_workspace, p_workspace_size);
+        break;
+      case DType::Float32:
         kernel->operator()<KernelID::MatmulFloatFloat>(
-                dst, weight, bias, src, M, N, K, p_workspace, p_workspace_size);
+                dst, weights()[0]->ptr<float>(), bias, src, M, N, K, p_workspace, p_workspace_size);
+        break;
+      }
     }
 }
 
@@ -180,6 +188,7 @@ size_t MatMul::get_workspace_in_byte() {
     uint32_t N = weights()[0]->shape()[0];
     auto src_dtype = inputs()[0]->dtype();
     auto kernel = get_kernel();
+    auto weight_dtype = weights()[0]->dtype();
     if (src_dtype == DType::Float32) {
         return kernel->get_workspace<KernelID::MatmulInt4Float>(
                 kernel->nr_thread(), M, N, K);
@@ -198,27 +207,27 @@ void MatMulLast::execute(WorkSpace* workspace, uint32_t) {
     void* p_workspace = workspace->ptr();
     uint32_t p_workspace_size = workspace->length();
     auto kernel = get_kernel();
-    if (src_dtype == DType::Float32 && weight_dtype == DType::Int4) {
-        float* dst = outputs()[0]->ptr<float>();
-        const void* weight = weights()[0]->ptr();
-        const float* bias = nullptr;
-        if (m_bias) {
-            bias = weights()[1]->ptr<float>();
-        }
-        const float* src = inputs()[0]->ptr<float>() + (row - 1) * K;
+    if (src_dtype == DType::Float32) {
+      float* dst = outputs()[0]->ptr<float>();
+      const float* bias = nullptr;
+      if (m_bias) {
+          bias = weights()[1]->ptr<float>();
+      }
+      const float* src = inputs()[0]->ptr<float>() + (row - 1) * K;
+      switch (weight_dtype) {
+      case DType::Int4:
         kernel->operator()<KernelID::MatmulInt4Float>(
-                dst, weight, bias, src, M, N, K, p_workspace, p_workspace_size);
-    }
-    if (src_dtype == DType::Float32 && weight_dtype == DType::Float32) {
-        float* dst = outputs()[0]->ptr<float>();
-        const float* weight = weights()[0]->ptr<float>();
-        const float* bias = nullptr;
-        if (m_bias) {
-            bias = weights()[1]->ptr<float>();
-        }
-        const float* src = inputs()[0]->ptr<float>() + (row - 1) * K;
+                dst, weights()[0]->ptr(), bias, src, M, N, K, p_workspace, p_workspace_size);
+        break;
+      case DType::Int8:
+        kernel->operator()<KernelID::MatmulInt8Float>(
+                dst, weights()[0]->ptr(), bias, src, M, N, K, p_workspace, p_workspace_size);
+        break;
+      case DType::Float32:
         kernel->operator()<KernelID::MatmulFloatFloat>(
-                dst, weight, bias, src, M, N, K, p_workspace, p_workspace_size);
+                dst, weights()[0]->ptr<float>(), bias, src, M, N, K, p_workspace, p_workspace_size);
+        break;
+      }
     }
 }
 
@@ -249,23 +258,26 @@ size_t AttentionBase::get_workspace_in_byte() {
     uint32_t seqlen = input->shape()[0];
 
     size_t total = 0;
-    if (src_dtype == DType::Float32 && w_dtype == DType::Int4) {
-        //! matmul tmp
+    if (src_dtype == DType::Float32) {
+      //! matmul tmp
+      switch (w_dtype) {
+      case DType::Int4:
         total += kernel->get_workspace<KernelID::MatmulInt4Float>(
                 kernel->nr_thread(), M, N, K);
-        //! out q
-        total += seqlen * m_embd * sizeof(float);
-        //! qk out
-        total += m_head * seqlen * m_ctx * sizeof(float);
-    }
-    if (src_dtype == DType::Float32 && w_dtype == DType::Float32) {
-        //! matmul tmp
+        break;
+      case DType::Int8:
+        total += kernel->get_workspace<KernelID::MatmulInt8Float>(
+                kernel->nr_thread(), M, N, K);
+        break;
+      case DType::Float32:
         total += kernel->get_workspace<KernelID::MatmulFloatFloat>(
                 kernel->nr_thread(), M, N, K);
-        //! out q
-        total += seqlen * m_embd * sizeof(float);
-        //! qk out
-        total += m_head * seqlen * m_ctx * sizeof(float);
+        break;
+      }
+      //! out q
+      total += seqlen * m_embd * sizeof(float);
+      //! qk out
+      total += m_head * seqlen * m_ctx * sizeof(float);
     }
     return total;
 }
@@ -311,12 +323,19 @@ void LlamaAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
 
     void* p_work = workspace->ptr();
     size_t matmul_size = 0;
-    if (weight_type == DType::Int4) {
+    switch (weight_type) {
+    case DType::Int4:
         matmul_size = kernel->get_workspace<KernelID::MatmulInt4Float>(
                 kernel->nr_thread(), seqlen, embd, embd);
-    } else if (weight_type == DType::Float32) {
+        break;
+    case DType::Int8:
+        matmul_size = kernel->get_workspace<KernelID::MatmulInt8Float>(
+                kernel->nr_thread(), seqlen, embd, embd);
+        break;
+    case DType::Float32:
         matmul_size = kernel->get_workspace<KernelID::MatmulFloatFloat>(
                 kernel->nr_thread(), seqlen, embd, embd);
+        break;
     }
 
     uint32_t size = workspace->length();
@@ -331,15 +350,24 @@ void LlamaAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
         float* p_outk = static_cast<float*>(m_kstorage->get_current_data());
         float* p_outv = static_cast<float*>(m_vstorage->get_current_data());
         float* p_outq = static_cast<float*>(q_out);
-        if (w_dtype == DType::Int4) {
+        switch (w_dtype) {
+        case DType::Int4:
             kernel->operator()<KernelID::MatmulInt4Float>(
                     p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work, size);
             kernel->operator()<KernelID::MatmulInt4Float>(
                     p_outk, p_wk, p_bk, pdata, seqlen, embd, embd, p_work, size);
             kernel->operator()<KernelID::MatmulInt4Float>(
                     p_outv, p_wv, p_bv, pdata, seqlen, embd, embd, p_work, size);
-
-        } else if (w_dtype == DType::Float32) {
+            break;
+        case DType::Int8:
+            kernel->operator()<KernelID::MatmulInt8Float>(
+                    p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work, size);
+            kernel->operator()<KernelID::MatmulInt8Float>(
+                    p_outk, p_wk, p_bk, pdata, seqlen, embd, embd, p_work, size);
+            kernel->operator()<KernelID::MatmulInt8Float>(
+                    p_outv, p_wv, p_bv, pdata, seqlen, embd, embd, p_work, size);
+            break;
+        case DType::Float32:
             kernel->operator()<KernelID::MatmulFloatFloat>(
                     p_outq, (float*)p_wq, p_bq, pdata, seqlen, embd, embd, p_work,
                     size);
@@ -349,6 +377,7 @@ void LlamaAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
             kernel->operator()<KernelID::MatmulFloatFloat>(
                     p_outv, (float*)p_wv, p_bv, pdata, seqlen, embd, embd, p_work,
                     size);
+            break;
         }
         //! rope Q
 
@@ -434,12 +463,19 @@ void GlmAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
 
     void* p_work = workspace->ptr();
     size_t matmul_size = 0;
-    if (weight_type == DType::Int4) {
+    switch (weight_type) {
+    case DType::Int4:
         matmul_size = kernel->get_workspace<KernelID::MatmulInt4Float>(
                 kernel->nr_thread(), seqlen, embd, embd);
-    } else if (weight_type == DType::Float32) {
+        break;
+    case DType::Int8:
+        matmul_size = kernel->get_workspace<KernelID::MatmulInt8Float>(
+                kernel->nr_thread(), seqlen, embd, embd);
+        break;
+    case DType::Float32:
         matmul_size = kernel->get_workspace<KernelID::MatmulFloatFloat>(
                 kernel->nr_thread(), seqlen, embd, embd);
+        break;
     }
     uint32_t size = workspace->length();
 
@@ -453,14 +489,24 @@ void GlmAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
         float* p_outk = static_cast<float*>(m_kstorage->get_current_data());
         float* p_outv = static_cast<float*>(m_vstorage->get_current_data());
         float* p_outq = static_cast<float*>(q_out);
-        if (w_dtype == DType::Int4) {
+        switch (w_dtype) {
+        case DType::Int4:
             kernel->operator()<KernelID::MatmulInt4Float>(
                     p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work, size);
             kernel->operator()<KernelID::MatmulInt4Float>(
                     p_outk, p_wk, p_bk, pdata, seqlen, embd, embd, p_work, size);
             kernel->operator()<KernelID::MatmulInt4Float>(
                     p_outv, p_wv, p_bv, pdata, seqlen, embd, embd, p_work, size);
-        } else if (w_dtype == DType::Float32) {
+            break;
+        case DType::Int8:
+            kernel->operator()<KernelID::MatmulInt8Float>(
+                    p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work, size);
+            kernel->operator()<KernelID::MatmulInt8Float>(
+                    p_outk, p_wk, p_bk, pdata, seqlen, embd, embd, p_work, size);
+            kernel->operator()<KernelID::MatmulInt8Float>(
+                    p_outv, p_wv, p_bv, pdata, seqlen, embd, embd, p_work, size);
+            break;
+        case DType::Float32:
             kernel->operator()<KernelID::MatmulFloatFloat>(
                     p_outq, (float*)p_wq, p_bq, pdata, seqlen, embd, embd, p_work,
                     size);
@@ -470,6 +516,7 @@ void GlmAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
             kernel->operator()<KernelID::MatmulFloatFloat>(
                     p_outv, (float*)p_wv, p_bv, pdata, seqlen, embd, embd, p_work,
                     size);
+            break;
         }
         //! rope Q
         kernel->operator()<KernelID::GlmRopeFloat>(
@@ -541,12 +588,19 @@ void Glm2MultiQueryAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
 
     void* p_work = workspace->ptr();
     size_t matmul_size = 0;
-    if (weight_type == DType::Int4) {
+    switch (weight_type) {
+    case DType::Int4:
         matmul_size = kernel->get_workspace<KernelID::MatmulInt4Float>(
                 kernel->nr_thread(), seqlen, embd, embd);
-    } else if (weight_type == DType::Float32) {
+        break;
+    case DType::Int8:
+        matmul_size = kernel->get_workspace<KernelID::MatmulInt8Float>(
+                kernel->nr_thread(), seqlen, embd, embd);
+        break;
+    case DType::Float32:
         matmul_size = kernel->get_workspace<KernelID::MatmulFloatFloat>(
                 kernel->nr_thread(), seqlen, embd, embd);
+        break;
     }
     uint32_t size = workspace->length();
 
@@ -563,14 +617,24 @@ void Glm2MultiQueryAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
         float* p_outk = static_cast<float*>(m_kstorage->get_current_data());
         float* p_outv = static_cast<float*>(m_vstorage->get_current_data());
         float* p_outq = static_cast<float*>(q_out);
-        if (w_dtype == DType::Int4) {
+        switch (w_dtype) {
+        case DType::Int4:
             kernel->operator()<KernelID::MatmulInt4Float>(
                     p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work, size);
             kernel->operator()<KernelID::MatmulInt4Float>(
                     p_outk, p_wk, p_bk, pdata, seqlen, kv_length, embd, p_work, size);
             kernel->operator()<KernelID::MatmulInt4Float>(
                     p_outv, p_wv, p_bv, pdata, seqlen, kv_length, embd, p_work, size);
-        } else if (w_dtype == DType::Float32) {
+            break;
+        case DType::Int8:
+            kernel->operator()<KernelID::MatmulInt8Float>(
+                    p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work, size);
+            kernel->operator()<KernelID::MatmulInt8Float>(
+                    p_outk, p_wk, p_bk, pdata, seqlen, kv_length, embd, p_work, size);
+            kernel->operator()<KernelID::MatmulInt8Float>(
+                    p_outv, p_wv, p_bv, pdata, seqlen, kv_length, embd, p_work, size);
+            break;
+        case DType::Float32:
             kernel->operator()<KernelID::MatmulFloatFloat>(
                     p_outq, (float*)p_wq, p_bq, pdata, seqlen, embd, embd, p_work,
                     size);
@@ -580,6 +644,7 @@ void Glm2MultiQueryAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
             kernel->operator()<KernelID::MatmulFloatFloat>(
                     p_outv, (float*)p_wv, p_bv, pdata, seqlen, kv_length, embd, p_work,
                     size);
+            break;
         }
         //! rope Q
         kernel->operator()<KernelID::RopeFloat>(

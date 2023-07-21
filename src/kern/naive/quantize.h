@@ -39,6 +39,25 @@ inline void dequantize_row_q4_0_reference(
     }
 }
 
+inline void dequantize_row_q8_0_reference(
+        const void* __restrict x, float* __restrict y, int k) {
+    const int nb = k / QK80;
+    const size_t bs = sizeof(float) + QK40 / 2;
+
+    const BlockQ80* xx = reinterpret_cast<const BlockQ80*>(x);
+
+    // scalar
+    for (int i = 0; i < nb; i++) {
+        const float d = xx[i].d;
+
+        const int8_t* __restrict pp = xx[i].qs;
+
+        for (int l = 0; l < QK80; l++) {
+            y[i * QK80 + l] = pp[l] * d;
+        }
+    }
+}
+
 inline size_t quantize_row_q4_0_reference(const float* x, BlockQ40* y, int k) {
     const int nb = k / QK40;
 
@@ -129,6 +148,32 @@ inline float vec_vec_dot_q40_with_q80_reference(
             const int i3 = p1[2 * j + 1];
 
             sumi += i0 * i2 + i1 * i3;
+        }
+        sumf += d0 * d1 * sumi;
+    }
+    return sumf;
+}
+
+inline float vec_vec_dot_q80_with_q80_reference(
+        const int n, const void* vx, const void* vy) {
+    const int nb = n / QK80;
+    assert(n % QK80 == 0);
+    assert(nb % 2 == 0);
+
+    const BlockQ80* __restrict x = (BlockQ80*)(vx);
+    const BlockQ80* __restrict y = (BlockQ80*)(vy);
+
+    float sumf = 0.0;
+    for (int i = 0; i < nb; i++) {
+        const float d0 = x[i].d;
+        const float d1 = y[i].d;
+
+        const int8_t* __restrict p0 = x[i].qs;
+        const int8_t* __restrict p1 = y[i].qs;
+
+        int sumi = 0;
+        for (int j = 0; j < QK80; j++) {
+            sumi += p0[j] * p1[j];
         }
         sumf += d0 * d1 * sumi;
     }
