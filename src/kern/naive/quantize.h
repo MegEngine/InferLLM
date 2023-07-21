@@ -44,7 +44,7 @@ inline void dequantize_row_q8_0_reference(
     const int nb = k / QK80;
     const size_t bs = sizeof(float) + QK40 / 2;
 
-		const BlockQ80* xx = reinterpret_cast<const BlockQ80*>(x);
+    const BlockQ80* xx = reinterpret_cast<const BlockQ80*>(x);
 
     // scalar
     for (int i = 0; i < nb; i++) {
@@ -52,8 +52,8 @@ inline void dequantize_row_q8_0_reference(
 
         const int8_t* __restrict pp = xx[i].qs;
 
-        for (int l = 0; l < QK80; l ++) {
-						y[i * QK80 + l] = pp[l] * d;
+        for (int l = 0; l < QK80; l++) {
+            y[i * QK80 + l] = pp[l] * d;
         }
     }
 }
