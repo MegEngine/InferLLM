@@ -7,7 +7,7 @@ using namespace inferllm;
 
 void LayerNorm::execute(WorkSpace* workspace, uint32_t nr_past) {
     std::shared_ptr<Tensor> weight = nullptr, bias = nullptr;
-    int weight_idx =0;
+    int weight_idx = 0;
     if (m_mul) {
         weight = weights()[weight_idx++];
         DType weight_type = weight->dtype();
@@ -60,21 +60,23 @@ void Embedding::execute(WorkSpace*, uint32_t) {
     auto kernel = get_kernel();
     if (output->dtype() == DType::Float32) {
         switch (weight_type) {
-        case DType::Int4:
-            kernel->operator()<KernelID::EmbeddingGetInt4Float>(
-                    weight->ptr(), input->ptr<uint32_t>(), output->ptr<float>(), len,
-                    m_embd);
-            break;
-        case DType::Int8:
-            kernel->operator()<KernelID::EmbeddingGetInt8Float>(
-                    weight->ptr(), input->ptr<uint32_t>(), output->ptr<float>(), len,
-                    m_embd);
-            break;
-        case DType::Float32:
-            kernel->operator()<KernelID::EmbeddingGetFloatFloat>(
-                    weight->ptr<float>(), input->ptr<uint32_t>(), output->ptr<float>(),
-                    len, m_embd);
-            break;
+            case DType::Int4:
+                kernel->operator()<KernelID::EmbeddingGetInt4Float>(
+                        weight->ptr(), input->ptr<uint32_t>(), output->ptr<float>(),
+                        len, m_embd);
+                break;
+            case DType::Int8:
+                kernel->operator()<KernelID::EmbeddingGetInt8Float>(
+                        weight->ptr(), input->ptr<uint32_t>(), output->ptr<float>(),
+                        len, m_embd);
+                break;
+            case DType::Float32:
+                kernel->operator()<KernelID::EmbeddingGetFloatFloat>(
+                        weight->ptr<float>(), input->ptr<uint32_t>(),
+                        output->ptr<float>(), len, m_embd);
+                break;
+            default:
+                INFER_ASSERT(0, "not support");
         }
     } else {
         //! fp16
@@ -159,26 +161,31 @@ void MatMul::execute(WorkSpace* workspace, uint32_t) {
     uint32_t p_workspace_size = workspace->length();
     auto kernel = get_kernel();
     if (src_dtype == DType::Float32) {
-      float* dst = outputs()[0]->ptr<float>();
-      const float* bias = nullptr;
-      if (m_bias) {
-          bias = weights()[1]->ptr<float>();
-      }
-      const float* src = inputs()[0]->ptr<float>();
-      switch (weight_dtype) {
-      case DType::Int4:
-        kernel->operator()<KernelID::MatmulInt4Float>(
-                dst, weights()[0]->ptr(), bias, src, M, N, K, p_workspace, p_workspace_size);
-        break;
-      case DType::Int8:
-        kernel->operator()<KernelID::MatmulInt8Float>(
-                dst, weights()[0]->ptr(), bias, src, M, N, K, p_workspace, p_workspace_size);
-        break;
-      case DType::Float32:
-        kernel->operator()<KernelID::MatmulFloatFloat>(
-                dst, weights()[0]->ptr<float>(), bias, src, M, N, K, p_workspace, p_workspace_size);
-        break;
-      }
+        float* dst = outputs()[0]->ptr<float>();
+        const float* bias = nullptr;
+        if (m_bias) {
+            bias = weights()[1]->ptr<float>();
+        }
+        const float* src = inputs()[0]->ptr<float>();
+        switch (weight_dtype) {
+            case DType::Int4:
+                kernel->operator()<KernelID::MatmulInt4Float>(
+                        dst, weights()[0]->ptr(), bias, src, M, N, K, p_workspace,
+                        p_workspace_size);
+                break;
+            case DType::Int8:
+                kernel->operator()<KernelID::MatmulInt8Float>(
+                        dst, weights()[0]->ptr(), bias, src, M, N, K, p_workspace,
+                        p_workspace_size);
+                break;
+            case DType::Float32:
+                kernel->operator()<KernelID::MatmulFloatFloat>(
+                        dst, weights()[0]->ptr<float>(), bias, src, M, N, K,
+                        p_workspace, p_workspace_size);
+                break;
+            default:
+                INFER_ASSERT(0, "not support");
+        }
     }
 }
 
@@ -208,26 +215,31 @@ void MatMulLast::execute(WorkSpace* workspace, uint32_t) {
     uint32_t p_workspace_size = workspace->length();
     auto kernel = get_kernel();
     if (src_dtype == DType::Float32) {
-      float* dst = outputs()[0]->ptr<float>();
-      const float* bias = nullptr;
-      if (m_bias) {
-          bias = weights()[1]->ptr<float>();
-      }
-      const float* src = inputs()[0]->ptr<float>() + (row - 1) * K;
-      switch (weight_dtype) {
-      case DType::Int4:
-        kernel->operator()<KernelID::MatmulInt4Float>(
-                dst, weights()[0]->ptr(), bias, src, M, N, K, p_workspace, p_workspace_size);
-        break;
-      case DType::Int8:
-        kernel->operator()<KernelID::MatmulInt8Float>(
-                dst, weights()[0]->ptr(), bias, src, M, N, K, p_workspace, p_workspace_size);
-        break;
-      case DType::Float32:
-        kernel->operator()<KernelID::MatmulFloatFloat>(
-                dst, weights()[0]->ptr<float>(), bias, src, M, N, K, p_workspace, p_workspace_size);
-        break;
-      }
+        float* dst = outputs()[0]->ptr<float>();
+        const float* bias = nullptr;
+        if (m_bias) {
+            bias = weights()[1]->ptr<float>();
+        }
+        const float* src = inputs()[0]->ptr<float>() + (row - 1) * K;
+        switch (weight_dtype) {
+            case DType::Int4:
+                kernel->operator()<KernelID::MatmulInt4Float>(
+                        dst, weights()[0]->ptr(), bias, src, M, N, K, p_workspace,
+                        p_workspace_size);
+                break;
+            case DType::Int8:
+                kernel->operator()<KernelID::MatmulInt8Float>(
+                        dst, weights()[0]->ptr(), bias, src, M, N, K, p_workspace,
+                        p_workspace_size);
+                break;
+            case DType::Float32:
+                kernel->operator()<KernelID::MatmulFloatFloat>(
+                        dst, weights()[0]->ptr<float>(), bias, src, M, N, K,
+                        p_workspace, p_workspace_size);
+                break;
+            default:
+                INFER_ASSERT(0, "not support");
+        }
     }
 }
 
@@ -259,25 +271,27 @@ size_t AttentionBase::get_workspace_in_byte() {
 
     size_t total = 0;
     if (src_dtype == DType::Float32) {
-      //! matmul tmp
-      switch (w_dtype) {
-      case DType::Int4:
-        total += kernel->get_workspace<KernelID::MatmulInt4Float>(
-                kernel->nr_thread(), M, N, K);
-        break;
-      case DType::Int8:
-        total += kernel->get_workspace<KernelID::MatmulInt8Float>(
-                kernel->nr_thread(), M, N, K);
-        break;
-      case DType::Float32:
-        total += kernel->get_workspace<KernelID::MatmulFloatFloat>(
-                kernel->nr_thread(), M, N, K);
-        break;
-      }
-      //! out q
-      total += seqlen * m_embd * sizeof(float);
-      //! qk out
-      total += m_head * seqlen * m_ctx * sizeof(float);
+        //! matmul tmp
+        switch (w_dtype) {
+            case DType::Int4:
+                total += kernel->get_workspace<KernelID::MatmulInt4Float>(
+                        kernel->nr_thread(), M, N, K);
+                break;
+            case DType::Int8:
+                total += kernel->get_workspace<KernelID::MatmulInt8Float>(
+                        kernel->nr_thread(), M, N, K);
+                break;
+            case DType::Float32:
+                total += kernel->get_workspace<KernelID::MatmulFloatFloat>(
+                        kernel->nr_thread(), M, N, K);
+                break;
+            default:
+                INFER_ASSERT(0, "not support");
+        }
+        //! out q
+        total += seqlen * m_embd * sizeof(float);
+        //! qk out
+        total += m_head * seqlen * m_ctx * sizeof(float);
     }
     return total;
 }
@@ -324,18 +338,20 @@ void LlamaAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
     void* p_work = workspace->ptr();
     size_t matmul_size = 0;
     switch (weight_type) {
-    case DType::Int4:
-        matmul_size = kernel->get_workspace<KernelID::MatmulInt4Float>(
-                kernel->nr_thread(), seqlen, embd, embd);
-        break;
-    case DType::Int8:
-        matmul_size = kernel->get_workspace<KernelID::MatmulInt8Float>(
-                kernel->nr_thread(), seqlen, embd, embd);
-        break;
-    case DType::Float32:
-        matmul_size = kernel->get_workspace<KernelID::MatmulFloatFloat>(
-                kernel->nr_thread(), seqlen, embd, embd);
-        break;
+        case DType::Int4:
+            matmul_size = kernel->get_workspace<KernelID::MatmulInt4Float>(
+                    kernel->nr_thread(), seqlen, embd, embd);
+            break;
+        case DType::Int8:
+            matmul_size = kernel->get_workspace<KernelID::MatmulInt8Float>(
+                    kernel->nr_thread(), seqlen, embd, embd);
+            break;
+        case DType::Float32:
+            matmul_size = kernel->get_workspace<KernelID::MatmulFloatFloat>(
+                    kernel->nr_thread(), seqlen, embd, embd);
+            break;
+        default:
+            INFER_ASSERT(0, "not support");
     }
 
     uint32_t size = workspace->length();
@@ -351,33 +367,35 @@ void LlamaAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
         float* p_outv = static_cast<float*>(m_vstorage->get_current_data());
         float* p_outq = static_cast<float*>(q_out);
         switch (w_dtype) {
-        case DType::Int4:
-            kernel->operator()<KernelID::MatmulInt4Float>(
-                    p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work, size);
-            kernel->operator()<KernelID::MatmulInt4Float>(
-                    p_outk, p_wk, p_bk, pdata, seqlen, embd, embd, p_work, size);
-            kernel->operator()<KernelID::MatmulInt4Float>(
-                    p_outv, p_wv, p_bv, pdata, seqlen, embd, embd, p_work, size);
-            break;
-        case DType::Int8:
-            kernel->operator()<KernelID::MatmulInt8Float>(
-                    p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work, size);
-            kernel->operator()<KernelID::MatmulInt8Float>(
-                    p_outk, p_wk, p_bk, pdata, seqlen, embd, embd, p_work, size);
-            kernel->operator()<KernelID::MatmulInt8Float>(
-                    p_outv, p_wv, p_bv, pdata, seqlen, embd, embd, p_work, size);
-            break;
-        case DType::Float32:
-            kernel->operator()<KernelID::MatmulFloatFloat>(
-                    p_outq, (float*)p_wq, p_bq, pdata, seqlen, embd, embd, p_work,
-                    size);
-            kernel->operator()<KernelID::MatmulFloatFloat>(
-                    p_outk, (float*)p_wk, p_bk, pdata, seqlen, embd, embd, p_work,
-                    size);
-            kernel->operator()<KernelID::MatmulFloatFloat>(
-                    p_outv, (float*)p_wv, p_bv, pdata, seqlen, embd, embd, p_work,
-                    size);
-            break;
+            case DType::Int4:
+                kernel->operator()<KernelID::MatmulInt4Float>(
+                        p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work, size);
+                kernel->operator()<KernelID::MatmulInt4Float>(
+                        p_outk, p_wk, p_bk, pdata, seqlen, embd, embd, p_work, size);
+                kernel->operator()<KernelID::MatmulInt4Float>(
+                        p_outv, p_wv, p_bv, pdata, seqlen, embd, embd, p_work, size);
+                break;
+            case DType::Int8:
+                kernel->operator()<KernelID::MatmulInt8Float>(
+                        p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work, size);
+                kernel->operator()<KernelID::MatmulInt8Float>(
+                        p_outk, p_wk, p_bk, pdata, seqlen, embd, embd, p_work, size);
+                kernel->operator()<KernelID::MatmulInt8Float>(
+                        p_outv, p_wv, p_bv, pdata, seqlen, embd, embd, p_work, size);
+                break;
+            case DType::Float32:
+                kernel->operator()<KernelID::MatmulFloatFloat>(
+                        p_outq, (float*)p_wq, p_bq, pdata, seqlen, embd, embd, p_work,
+                        size);
+                kernel->operator()<KernelID::MatmulFloatFloat>(
+                        p_outk, (float*)p_wk, p_bk, pdata, seqlen, embd, embd, p_work,
+                        size);
+                kernel->operator()<KernelID::MatmulFloatFloat>(
+                        p_outv, (float*)p_wv, p_bv, pdata, seqlen, embd, embd, p_work,
+                        size);
+                break;
+            default:
+                INFER_ASSERT(0, "not support");
         }
         //! rope Q
 
@@ -464,18 +482,20 @@ void GlmAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
     void* p_work = workspace->ptr();
     size_t matmul_size = 0;
     switch (weight_type) {
-    case DType::Int4:
-        matmul_size = kernel->get_workspace<KernelID::MatmulInt4Float>(
-                kernel->nr_thread(), seqlen, embd, embd);
-        break;
-    case DType::Int8:
-        matmul_size = kernel->get_workspace<KernelID::MatmulInt8Float>(
-                kernel->nr_thread(), seqlen, embd, embd);
-        break;
-    case DType::Float32:
-        matmul_size = kernel->get_workspace<KernelID::MatmulFloatFloat>(
-                kernel->nr_thread(), seqlen, embd, embd);
-        break;
+        case DType::Int4:
+            matmul_size = kernel->get_workspace<KernelID::MatmulInt4Float>(
+                    kernel->nr_thread(), seqlen, embd, embd);
+            break;
+        case DType::Int8:
+            matmul_size = kernel->get_workspace<KernelID::MatmulInt8Float>(
+                    kernel->nr_thread(), seqlen, embd, embd);
+            break;
+        case DType::Float32:
+            matmul_size = kernel->get_workspace<KernelID::MatmulFloatFloat>(
+                    kernel->nr_thread(), seqlen, embd, embd);
+            break;
+        default:
+            INFER_ASSERT(0, "not support");
     }
     uint32_t size = workspace->length();
 
@@ -490,33 +510,35 @@ void GlmAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
         float* p_outv = static_cast<float*>(m_vstorage->get_current_data());
         float* p_outq = static_cast<float*>(q_out);
         switch (w_dtype) {
-        case DType::Int4:
-            kernel->operator()<KernelID::MatmulInt4Float>(
-                    p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work, size);
-            kernel->operator()<KernelID::MatmulInt4Float>(
-                    p_outk, p_wk, p_bk, pdata, seqlen, embd, embd, p_work, size);
-            kernel->operator()<KernelID::MatmulInt4Float>(
-                    p_outv, p_wv, p_bv, pdata, seqlen, embd, embd, p_work, size);
-            break;
-        case DType::Int8:
-            kernel->operator()<KernelID::MatmulInt8Float>(
-                    p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work, size);
-            kernel->operator()<KernelID::MatmulInt8Float>(
-                    p_outk, p_wk, p_bk, pdata, seqlen, embd, embd, p_work, size);
-            kernel->operator()<KernelID::MatmulInt8Float>(
-                    p_outv, p_wv, p_bv, pdata, seqlen, embd, embd, p_work, size);
-            break;
-        case DType::Float32:
-            kernel->operator()<KernelID::MatmulFloatFloat>(
-                    p_outq, (float*)p_wq, p_bq, pdata, seqlen, embd, embd, p_work,
-                    size);
-            kernel->operator()<KernelID::MatmulFloatFloat>(
-                    p_outk, (float*)p_wk, p_bk, pdata, seqlen, embd, embd, p_work,
-                    size);
-            kernel->operator()<KernelID::MatmulFloatFloat>(
-                    p_outv, (float*)p_wv, p_bv, pdata, seqlen, embd, embd, p_work,
-                    size);
-            break;
+            case DType::Int4:
+                kernel->operator()<KernelID::MatmulInt4Float>(
+                        p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work, size);
+                kernel->operator()<KernelID::MatmulInt4Float>(
+                        p_outk, p_wk, p_bk, pdata, seqlen, embd, embd, p_work, size);
+                kernel->operator()<KernelID::MatmulInt4Float>(
+                        p_outv, p_wv, p_bv, pdata, seqlen, embd, embd, p_work, size);
+                break;
+            case DType::Int8:
+                kernel->operator()<KernelID::MatmulInt8Float>(
+                        p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work, size);
+                kernel->operator()<KernelID::MatmulInt8Float>(
+                        p_outk, p_wk, p_bk, pdata, seqlen, embd, embd, p_work, size);
+                kernel->operator()<KernelID::MatmulInt8Float>(
+                        p_outv, p_wv, p_bv, pdata, seqlen, embd, embd, p_work, size);
+                break;
+            case DType::Float32:
+                kernel->operator()<KernelID::MatmulFloatFloat>(
+                        p_outq, (float*)p_wq, p_bq, pdata, seqlen, embd, embd, p_work,
+                        size);
+                kernel->operator()<KernelID::MatmulFloatFloat>(
+                        p_outk, (float*)p_wk, p_bk, pdata, seqlen, embd, embd, p_work,
+                        size);
+                kernel->operator()<KernelID::MatmulFloatFloat>(
+                        p_outv, (float*)p_wv, p_bv, pdata, seqlen, embd, embd, p_work,
+                        size);
+                break;
+            default:
+                INFER_ASSERT(0, "not support");
         }
         //! rope Q
         kernel->operator()<KernelID::GlmRopeFloat>(
@@ -589,18 +611,20 @@ void Glm2MultiQueryAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
     void* p_work = workspace->ptr();
     size_t matmul_size = 0;
     switch (weight_type) {
-    case DType::Int4:
-        matmul_size = kernel->get_workspace<KernelID::MatmulInt4Float>(
-                kernel->nr_thread(), seqlen, embd, embd);
-        break;
-    case DType::Int8:
-        matmul_size = kernel->get_workspace<KernelID::MatmulInt8Float>(
-                kernel->nr_thread(), seqlen, embd, embd);
-        break;
-    case DType::Float32:
-        matmul_size = kernel->get_workspace<KernelID::MatmulFloatFloat>(
-                kernel->nr_thread(), seqlen, embd, embd);
-        break;
+        case DType::Int4:
+            matmul_size = kernel->get_workspace<KernelID::MatmulInt4Float>(
+                    kernel->nr_thread(), seqlen, embd, embd);
+            break;
+        case DType::Int8:
+            matmul_size = kernel->get_workspace<KernelID::MatmulInt8Float>(
+                    kernel->nr_thread(), seqlen, embd, embd);
+            break;
+        case DType::Float32:
+            matmul_size = kernel->get_workspace<KernelID::MatmulFloatFloat>(
+                    kernel->nr_thread(), seqlen, embd, embd);
+            break;
+        default:
+            INFER_ASSERT(0, "not support");
     }
     uint32_t size = workspace->length();
 
@@ -618,33 +642,39 @@ void Glm2MultiQueryAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
         float* p_outv = static_cast<float*>(m_vstorage->get_current_data());
         float* p_outq = static_cast<float*>(q_out);
         switch (w_dtype) {
-        case DType::Int4:
-            kernel->operator()<KernelID::MatmulInt4Float>(
-                    p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work, size);
-            kernel->operator()<KernelID::MatmulInt4Float>(
-                    p_outk, p_wk, p_bk, pdata, seqlen, kv_length, embd, p_work, size);
-            kernel->operator()<KernelID::MatmulInt4Float>(
-                    p_outv, p_wv, p_bv, pdata, seqlen, kv_length, embd, p_work, size);
-            break;
-        case DType::Int8:
-            kernel->operator()<KernelID::MatmulInt8Float>(
-                    p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work, size);
-            kernel->operator()<KernelID::MatmulInt8Float>(
-                    p_outk, p_wk, p_bk, pdata, seqlen, kv_length, embd, p_work, size);
-            kernel->operator()<KernelID::MatmulInt8Float>(
-                    p_outv, p_wv, p_bv, pdata, seqlen, kv_length, embd, p_work, size);
-            break;
-        case DType::Float32:
-            kernel->operator()<KernelID::MatmulFloatFloat>(
-                    p_outq, (float*)p_wq, p_bq, pdata, seqlen, embd, embd, p_work,
-                    size);
-            kernel->operator()<KernelID::MatmulFloatFloat>(
-                    p_outk, (float*)p_wk, p_bk, pdata, seqlen, kv_length, embd, p_work,
-                    size);
-            kernel->operator()<KernelID::MatmulFloatFloat>(
-                    p_outv, (float*)p_wv, p_bv, pdata, seqlen, kv_length, embd, p_work,
-                    size);
-            break;
+            case DType::Int4:
+                kernel->operator()<KernelID::MatmulInt4Float>(
+                        p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work, size);
+                kernel->operator()<KernelID::MatmulInt4Float>(
+                        p_outk, p_wk, p_bk, pdata, seqlen, kv_length, embd, p_work,
+                        size);
+                kernel->operator()<KernelID::MatmulInt4Float>(
+                        p_outv, p_wv, p_bv, pdata, seqlen, kv_length, embd, p_work,
+                        size);
+                break;
+            case DType::Int8:
+                kernel->operator()<KernelID::MatmulInt8Float>(
+                        p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work, size);
+                kernel->operator()<KernelID::MatmulInt8Float>(
+                        p_outk, p_wk, p_bk, pdata, seqlen, kv_length, embd, p_work,
+                        size);
+                kernel->operator()<KernelID::MatmulInt8Float>(
+                        p_outv, p_wv, p_bv, pdata, seqlen, kv_length, embd, p_work,
+                        size);
+                break;
+            case DType::Float32:
+                kernel->operator()<KernelID::MatmulFloatFloat>(
+                        p_outq, (float*)p_wq, p_bq, pdata, seqlen, embd, embd, p_work,
+                        size);
+                kernel->operator()<KernelID::MatmulFloatFloat>(
+                        p_outk, (float*)p_wk, p_bk, pdata, seqlen, kv_length, embd,
+                        p_work, size);
+                kernel->operator()<KernelID::MatmulFloatFloat>(
+                        p_outv, (float*)p_wv, p_bv, pdata, seqlen, kv_length, embd,
+                        p_work, size);
+                break;
+            default:
+                INFER_ASSERT(0, "not support");
         }
         //! rope Q
         kernel->operator()<KernelID::RopeFloat>(
