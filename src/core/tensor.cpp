@@ -47,33 +47,12 @@ uint32_t inferllm::dtype_block_size(DType dtype) {
 TensorState Tensor::prepare_data() {
     size_t length = length_in_byte();
     if (!m_data && m_state == TensorState::OutSide) {
+        //! if m_file is not nullptr, the tensor is weights and should be read or map
+        //! from file
         if (m_file) {
-            if (m_file->enable_mmap()) {
-                if (m_device->type() == KernelType::GPU) {
-#if ENABLE_GPU
-                    auto temp_ptr = m_file->get_mmap_data(length, m_file_offset);
-                    m_data = m_device->allocate(length);
-                    cudaError_t error = cudaMemcpy(
-                            m_data, temp_ptr, length * sizeof(char),
-                            cudaMemcpyHostToDevice);
-#endif
-                } else {
-                    m_data = m_file->get_mmap_data(length, m_file_offset);
-                }
-            } else if (m_data == nullptr) {
-                if (m_device->type() == KernelType::GPU) {
-#if ENABLE_GPU
-                    m_data = m_device->allocate(length);
-                    auto temp_ptr = new char[length];
-                    m_file->read_data(temp_ptr, length, m_file_offset);
-                    cudaMemcpy(m_data, temp_ptr, length, cudaMemcpyHostToDevice);
-                    delete[] temp_ptr;
-#endif
-                } else {
-                    m_data = m_device->allocate(length);
-                    m_file->read_data(m_data, length, m_file_offset);
-                }
-            }
+            read_data_from_file();
+            //! the data is the input/output tensor of Operator, and should be allocate
+            //! from memory pool
         } else {
             m_data = m_device->allocate(length);
         }
@@ -81,6 +60,7 @@ TensorState Tensor::prepare_data() {
     m_state = TensorState::Own;
     return m_state;
 }
+
 TensorState Tensor::recall_data() {
     if (m_shared) {
         return m_state;
@@ -92,6 +72,33 @@ TensorState Tensor::recall_data() {
     }
     m_state = TensorState::OutSide;
     return m_state;
+}
+
+size_t Tensor::read_data_from_file() {
+    size_t length = length_in_byte();
+    if (m_file->enable_mmap()) {
+        //! no unified memory, we need read data to host memory and copy to device
+        if (!m_device->unified_memory()) {
+            auto temp_ptr = m_file->get_mmap_data(length, m_file_offset);
+            m_data = m_device->allocate(length);
+            m_device->host2device_copy(m_data, temp_ptr, length);
+        } else {
+            m_data = m_file->get_mmap_data(length, m_file_offset);
+        }
+    } else if (m_data == nullptr) {
+        //! no unified memory, we need read data to host memory and copy to device
+        if (!m_device->unified_memory()) {
+            m_data = m_device->allocate(length);
+            auto host_ptr = m_device->allocate_host(length);
+            m_file->read_data(host_ptr, length, m_file_offset);
+            m_device->host2device_copy(m_data, host_ptr, length);
+            m_device->free_host(host_ptr);
+        } else {
+            m_data = m_device->allocate(length);
+            m_file->read_data(m_data, length, m_file_offset);
+        }
+    }
+    return length;
 }
 
 void Tensor::set_shared_memory(void* data, size_t size) {

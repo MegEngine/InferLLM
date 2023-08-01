@@ -151,6 +151,8 @@ public:
         m_file_offset = offset;
     }
 
+    size_t read_data_from_file();
+
 private:
     bool m_shared = false;
     int32_t m_usr_count = 0;

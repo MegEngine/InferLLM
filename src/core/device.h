@@ -27,7 +27,13 @@ public:
     Device() = default;
 
     virtual void* allocate(size_t len) = 0;
+
+    virtual void* allocate_host(size_t len) = 0;
+
     virtual void free_device(void* ptr) = 0;
+
+    virtual void free_host(void* ptr) = 0;
+
     virtual ~Device() = default;
 
     Kernel* kernel() { return m_kernel.get(); }
@@ -51,6 +57,11 @@ public:
 
     virtual void sync() = 0;
 
+    //! whether the device support unified memory, in  unified memory, the host memory
+    //! and device memory is the same, CPU is the unified memory, GPU is the not unified
+    //! memory
+    virtual bool unified_memory() { return true; }
+
 protected:
     std::unique_ptr<Kernel> m_kernel;
     std::map<void*, size_t> m_alloc_memory;
@@ -65,8 +76,10 @@ public:
     }
 
     void* allocate(size_t len) override;
+    void* allocate_host(size_t len) override;
 
     void free_device(void* ptr) override;
+    void free_host(void* ptr) override;
 
     void deactive() override { m_thread_pool->deactive(); }
 
@@ -107,8 +120,10 @@ public:
     ~GPUDevice();
 
     void* allocate(size_t len) override;
+    void* allocate_host(size_t len) override;
 
     void free_device(void* ptr) override;
+    void free_host(void* ptr) override;
 
     void* aligned_alloc(size_t size) override {
         void* ptr = nullptr;
@@ -128,6 +143,8 @@ public:
             void* dst, const void* src, size_t size, bool async = false) override;
 
     void sync() override { CUDA_CHECK(cudaStreamSynchronize(m_handle.stream)); }
+
+    bool unified_memory() override { return false; }
 
 private:
     cudaHandle m_handle;

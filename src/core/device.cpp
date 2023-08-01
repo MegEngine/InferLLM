@@ -52,6 +52,14 @@ void* CPUDevice::allocate(size_t len) {
 #endif
 }
 
+void* CPUDevice::allocate_host(size_t len) {
+    return aligned_alloc(len);
+}
+
+void CPUDevice::free_host(void* ptr) {
+    aligned_free(ptr);
+}
+
 void CPUDevice::free_device(void* ptr) {
 #ifdef ENABLE_ASAN
     aligned_free(ptr);
@@ -101,6 +109,16 @@ void GPUDevice::free_device(void* ptr) {
             "memory is not allocated by the DeviceCPU.");
     size_t len = m_alloc_memory[ptr];
     m_free_memory[len].push_back(ptr);
+}
+
+void* GPUDevice::allocate_host(size_t len) {
+    void* ptr = nullptr;
+    CUDA_CHECK(cudaMallocHost(&ptr, len));
+    return ptr;
+}
+
+void GPUDevice::free_host(void* ptr) {
+    CUDA_CHECK(cudaFreeHost(ptr));
 }
 
 GPUDevice::~GPUDevice() {

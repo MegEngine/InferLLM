@@ -60,7 +60,12 @@ public:
 
     Kernel* get_kernel() { return m_device->kernel(); }
 
-    void set_weights(OpIOs weights) { m_weights = weights; }
+    void set_weights(OpIOs weights) { 
+        m_weights = weights; 
+        for (auto weight : m_weights) {
+            weight->set_owner_op(this);
+        }
+    }
     void add_outputs(std::shared_ptr<Tensor> output) {
         output->set_owner_op(this);
         m_outputs.push_back(output);
