@@ -25,6 +25,7 @@ enum class KernelID {
     RmsNormFloat,
     SoftmaxFloat,
     MatmulInt4Float,
+    MatmulInt4FloatPacked,
     MatmulInt8Float,
     MatmulFloatFloat,
     MatmulWithHeadStrideFloat,
@@ -39,6 +40,11 @@ enum class KernelID {
     DiagMaskFloat,
     GlmGmask,
     PermuteFloat,
+    MatmulInt4WeightReorder,
+};
+
+enum class KernelOptMethod {
+    MatmulInt4Reorder = 0,
 };
 
 enum class ElemMode {
@@ -75,12 +81,20 @@ struct BlockQ40 {
     float d;               // delta
     uint8_t qs[QK40 / 2];  // nibbles / quants
 };
+static_assert(sizeof(BlockQ40) == 20, "BlockQ40 size error");
+
+struct BlockQ40X8 {
+    float scale[8];               // delta
+    uint8_t qs[QK40 / 2 * 8];     // nibbles / quants
+};
+static_assert(sizeof(BlockQ40X8) == 160, "BlockQ40X8 size error");
 
 #define QK80 32
 struct BlockQ80 {
     float d;          // delta
     int8_t qs[QK80];  // nibbles
 };
+static_assert(sizeof(BlockQ80) == 36, "BlockQ80 size error");
 }  // namespace inferllm
 
 #define PartialImplementKernel(kernel_id, fun)       \

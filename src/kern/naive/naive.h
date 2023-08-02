@@ -41,6 +41,11 @@ TaskSet llm_softmax_compute_float(
 TaskSet llm_matmul_compute_int4_float(
         float* dst, const void* src0, const float* bias, const float* src1, uint32_t M,
         uint32_t N, uint32_t K, void* workspace, uint32_t size);
+
+TaskSet llm_matmul_compute_int4_float_packed(
+        float* dst, const void* src0, const float* bias, const float* src1, uint32_t M,
+        uint32_t N, uint32_t K, void* workspace, uint32_t size);
+
 TaskSet llm_matmul_compute_int8_float(
         float* dst, const void* src0, const float* bias, const float* src1, uint32_t M,
         uint32_t N, uint32_t K, void* workspace, uint32_t size);
@@ -92,6 +97,9 @@ TaskSet llm_head_batched_matmul_compute_float(
         float* dst, const float* v, const float* qk, uint32_t seqlen, uint32_t embd,
         uint32_t head, uint32_t nr_past);
 
+TaskSet llm_int4_matmul_weight_reorder(
+        size_t M, size_t N, void* dst, void* src, size_t PACK_SIZE);
+
 template <KernelID Id, typename... Args>
 struct Comp {
     static TaskSet get_all_task(Args... args);
@@ -113,6 +121,7 @@ PartialImplementKernel(EmbeddingGetInt8Float, llm_embedding_get_int8_float);
 PartialImplementKernel(EmbeddingGetFloatFloat, llm_embedding_get_float_float);
 PartialImplementKernel(SoftmaxFloat, llm_softmax_compute_float);
 PartialImplementKernel(MatmulInt4Float, llm_matmul_compute_int4_float);
+PartialImplementKernel(MatmulInt4FloatPacked, llm_matmul_compute_int4_float_packed);
 PartialImplementKernel(MatmulInt8Float, llm_matmul_compute_int8_float);
 PartialImplementKernel(MatmulFloatFloat, llm_matmul_compute_float_float);
 PartialImplementKernel(
@@ -131,6 +140,8 @@ PartialImplementKernel(
         llm_matmul_compute_with_head_strideq_broadcastk_float);
 PartialImplementKernel(
         HeadBatchedMatmulBroadCastVFloat, llm_head_batched_matmul_broadcastv_float);
+
+PartialImplementKernel(MatmulInt4WeightReorder, llm_int4_matmul_weight_reorder);
 
 PartialImplementSpace(MatmulInt4Float, llm_matmul_get_workspace_float);
 PartialImplementSpace(MatmulInt8Float, llm_matmul_get_workspace_float);

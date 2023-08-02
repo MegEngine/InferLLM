@@ -2,6 +2,7 @@
 #include "../kern/kernel_define.h"
 #include "memory.h"
 #include "utils.h"
+#include "op.h"
 
 using namespace inferllm;
 
@@ -90,12 +91,30 @@ size_t Tensor::read_data_from_file() {
         if (!m_device->unified_memory()) {
             m_data = m_device->allocate(length);
             auto host_ptr = m_device->allocate_host(length);
-            m_file->read_data(host_ptr, length, m_file_offset);
+            auto opr = this->owner_op();
+            if (opr->need_preprocess_weight(this)) {
+                auto host_ptr2 = m_device->allocate_host(length);
+                m_file->read_data(host_ptr2, length, m_file_offset);
+                auto shape = opr->preprocess_weight(this, host_ptr2, host_ptr);
+                set_shape(shape);
+                m_device->free_host(host_ptr2);
+            } else {
+                m_file->read_data(host_ptr, length, m_file_offset);
+            }
             m_device->host2device_copy(m_data, host_ptr, length);
             m_device->free_host(host_ptr);
         } else {
             m_data = m_device->allocate(length);
-            m_file->read_data(m_data, length, m_file_offset);
+            auto opr = this->owner_op();
+            if (opr->need_preprocess_weight(this)) {
+                auto host_data = m_device->allocate_host(length);
+                m_file->read_data(host_data, length, m_file_offset);
+                auto shape = opr->preprocess_weight(this, host_data, m_data);
+                set_shape(shape);
+                m_device->free_host(host_data);
+            } else {
+                m_file->read_data(m_data, length, m_file_offset);
+            }
         }
     }
     return length;

@@ -120,6 +120,7 @@ inline void quantize_row_q8_0_reference(const float* x, BlockQ80* y, int k) {
     }
 }
 
+
 inline float vec_vec_dot_q40_with_q80_reference(
         const int n, const void* vx, const void* vy) {
     const int nb = n / QK80;
@@ -152,6 +153,103 @@ inline float vec_vec_dot_q40_with_q80_reference(
         sumf += d0 * d1 * sumi;
     }
     return sumf;
+}
+
+inline void vec_vec_dot_q40_with_q80_packed_reference(
+        const int n, const void* vx, const void* vy, float* dst, const float* bias) {
+    const int nb = n / QK80;
+    assert(n % QK80 == 0);
+
+    const BlockQ40X8* __restrict x = (BlockQ40X8*)(vx);
+    const BlockQ80* __restrict y = (BlockQ80*)(vy);
+    float sum0 = 0, sum1 = 0, sum2 = 0, sum3 = 0, sum4 = 0, sum5 = 0, sum6 = 0, sum7 = 0;
+    if (bias) {
+        sum0 = bias[0], sum1 = bias[1], sum2 = bias[2], sum3 = bias[3], sum4 = bias[4],
+        sum5 = bias[5], sum6 = bias[6], sum7 = bias[7];
+    }
+    for (int i = 0; i < nb; i++) {
+        const BlockQ40X8* __restrict xptr = x + i;
+
+        const uint8_t* __restrict x0 = xptr->qs;
+        const uint8_t* __restrict x1 = xptr->qs + 1 * QK40 / 2;
+        const uint8_t* __restrict x2 = xptr->qs + 2 * QK40 / 2;
+        const uint8_t* __restrict x3 = xptr->qs + 3 * QK40 / 2;
+        const uint8_t* __restrict x4 = xptr->qs + 4 * QK40 / 2;
+        const uint8_t* __restrict x5 = xptr->qs + 5 * QK40 / 2;
+        const uint8_t* __restrict x6 = xptr->qs + 6 * QK40 / 2;
+        const uint8_t* __restrict x7 = xptr->qs + 7 * QK40 / 2;
+
+        const float* scale = xptr->scale;
+        const float d0 = scale[0];
+        const float d1 = scale[1];
+        const float d2 = scale[2];
+        const float d3 = scale[3];
+        const float d4 = scale[4];
+        const float d5 = scale[5];
+        const float d6 = scale[6];
+        const float d7 = scale[7];
+
+        const int8_t* __restrict y0 = y[i].qs;
+        const float c0 = y[i].d;
+
+        int i_sum0 = 0, i_sum1 = 0, i_sum2 = 0, i_sum3 = 0, i_sum4 = 0, i_sum5 = 0,
+            i_sum6 = 0, i_sum7 = 0;
+        for (int j = 0; j < QK80 / 2; j++) {
+            const uint8_t v0 = x0[j], v1 = x1[j], v2 = x2[j], v3 = x3[j], v4 = x4[j],
+                          v5 = x5[j], v6 = x6[j], v7 = x7[j];
+
+            const int y2 = y0[2 * j + 0];
+            const int y3 = y0[2 * j + 1];
+
+            const int i00 = (int8_t)(v0 & 0x0F) - 8;
+            const int i01 = (int8_t)(v0 >> 4) - 8;
+            i_sum0 += i00 * y2 + i01 * y3;
+
+            const int i10 = (int8_t)(v1 & 0x0F) - 8;
+            const int i11 = (int8_t)(v1 >> 4) - 8;
+            i_sum1 += i10 * y2 + i11 * y3;
+
+            const int i20 = (int8_t)(v2 & 0x0F) - 8;
+            const int i21 = (int8_t)(v2 >> 4) - 8;
+            i_sum2 += i20 * y2 + i21 * y3;
+
+            const int i30 = (int8_t)(v3 & 0x0F) - 8;
+            const int i31 = (int8_t)(v3 >> 4) - 8;
+            i_sum3 += i30 * y2 + i31 * y3;
+
+            const int i40 = (int8_t)(v4 & 0x0F) - 8;
+            const int i41 = (int8_t)(v4 >> 4) - 8;
+            i_sum4 += i40 * y2 + i41 * y3;
+
+            const int i50 = (int8_t)(v5 & 0x0F) - 8;
+            const int i51 = (int8_t)(v5 >> 4) - 8;
+            i_sum5 += i50 * y2 + i51 * y3;
+
+            const int i60 = (int8_t)(v6 & 0x0F) - 8;
+            const int i61 = (int8_t)(v6 >> 4) - 8;
+            i_sum6 += i60 * y2 + i61 * y3;
+
+            const int i70 = (int8_t)(v7 & 0x0F) - 8;
+            const int i71 = (int8_t)(v7 >> 4) - 8;
+            i_sum7 += i70 * y2 + i71 * y3;
+        }
+        sum0 += d0 * c0 * i_sum0;
+        sum1 += d1 * c0 * i_sum1;
+        sum2 += d2 * c0 * i_sum2;
+        sum3 += d3 * c0 * i_sum3;
+        sum4 += d4 * c0 * i_sum4;
+        sum5 += d5 * c0 * i_sum5;
+        sum6 += d6 * c0 * i_sum6;
+        sum7 += d7 * c0 * i_sum7;
+    }
+    dst[0] = sum0;
+    dst[1] = sum1;
+    dst[2] = sum2;
+    dst[3] = sum3;
+    dst[4] = sum4;
+    dst[5] = sum5;
+    dst[6] = sum6;
+    dst[7] = sum7;
 }
 
 inline float vec_vec_dot_q80_with_q80_reference(

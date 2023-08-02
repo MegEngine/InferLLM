@@ -102,6 +102,9 @@ void llm_head_batched_matmul_compute_float(
         float* dst, const float* v, const float* qk, uint32_t seqlen, uint32_t embd,
         uint32_t head, uint32_t nr_past, cudaHandle* handle);
 
+void llm_int4_matmul_weight_reorder(
+        size_t M, size_t N, void* dst, void* src, size_t PACK_SIZE);
+
 template <KernelID Id, typename... Args>
 struct Comp {
     static void exec(Args... args, cudaHandle* handle);
@@ -167,6 +170,7 @@ PartialImplementKernel(
         llm_matmul_compute_with_head_strideq_broadcastk_float);
 PartialImplementKernel(
         HeadBatchedMatmulBroadCastVFloat, llm_head_batched_matmul_broadcastv_float);
+PartialImplementKernel(MatmulInt4WeightReorder, llm_int4_matmul_weight_reorder);
 
 PartialImplementSpace(MatmulInt4Float, llm_matmul_get_workspace_float);
 PartialImplementSpace(MatmulFloatFloat, llm_matmul_get_workspace_float_float);

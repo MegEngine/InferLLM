@@ -77,6 +77,15 @@ public:
     OpIOs outputs() { return m_outputs; }
     std::string name() { return m_name; }
 
+    //! for better optimized the compute, some op need preprocess the weight, so that
+    //! the compute is friendly to the compute kernel
+    virtual bool need_preprocess_weight(Tensor*) { return false; }
+
+    virtual std::vector<size_t> preprocess_weight(
+            Tensor* tensor, void* src, void* dst) {
+        return std::vector<size_t>();
+    }
+
 private:
     Device* m_device;
     OpIOs m_weights;
@@ -141,15 +150,37 @@ public:
         auto weight_shape = weights()[0]->shape();
         auto input_shape = inputs()[0]->shape();
         size_t M = input_shape.size() == 2 ? input_shape[0] : input_shape[1];
-        size_t K = weight_shape[1];
         size_t N = weight_shape[0];
+        if (m_weight_packed) {
+            N = N * PACK_SIZE;
+        }
         outputs()[0]->set_shape({M, N}, inputs()[0]->dtype());
     }
+
+    virtual bool need_preprocess_weight(Tensor* weight) override {
+        auto kernel = get_kernel();
+        //! only when the weight is int4
+        if (weight->name() == weights()[0]->name()) {
+            bool optimized =
+                    kernel->supported_optimization(KernelOptMethod::MatmulInt4Reorder);
+            bool int4 = weight->dtype() == DType::Int4;
+            if (optimized && int4) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    virtual std::vector<size_t> preprocess_weight(
+            Tensor* tensor, void* src, void* dst) override;
+
     virtual void execute(WorkSpace* workspace, uint32_t nr_past) override;
 
     size_t get_workspace_in_byte() override;
 
     bool m_bias = false;
+    constexpr static size_t PACK_SIZE = 8;
+    bool m_weight_packed = false;
 };
 
 class MatMulLast : public MatMul {
@@ -163,9 +194,13 @@ public:
         size_t M = 1;
         size_t K = weight_shape[1];
         size_t N = weight_shape[0];
+        if (m_weight_packed) {
+            N = N * PACK_SIZE;
+        }
         outputs()[0]->set_shape({M, N}, inputs()[0]->dtype());
     }
     void execute(WorkSpace* workspace, uint32_t nr_past) override;
+    virtual bool need_preprocess_weight(Tensor*) override { return false; }
 
     size_t get_workspace_in_byte() override;
 };

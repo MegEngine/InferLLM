@@ -762,5 +762,8 @@ size_t llm_matmul_get_workspace_float(uint32_t M, uint32_t N, uint32_t K) {
 size_t llm_matmul_get_workspace_float_float(uint32_t M, uint32_t N, uint32_t K) {
     return 0;
 }
+
+void llm_int4_matmul_weight_reorder(
+        size_t M, size_t N, void* dst, void* src, size_t PACK_SIZE) {}
 }  // namespace gpu
 }  // namespace inferllm

@@ -1,6 +1,7 @@
 #include "op.h"
 #include <fstream>
 #include <iostream>
+#include <string>
 #include "kern/kernel.h"
 #include "kern/naive/naive.h"
 using namespace inferllm;
@@ -153,7 +154,7 @@ void SpliteHalfActiveMul::execute(WorkSpace*, uint32_t) {
 
 void MatMul::execute(WorkSpace* workspace, uint32_t) {
     auto N = weights()[0]->shape()[0];
-    auto K = weights()[0]->shape()[1];
+    auto K = inputs()[0]->shape()[1];
     auto M = inputs()[0]->shape()[0];
     auto src_dtype = inputs()[0]->dtype();
     auto weight_dtype = weights()[0]->dtype();
@@ -169,9 +170,15 @@ void MatMul::execute(WorkSpace* workspace, uint32_t) {
         const float* src = inputs()[0]->ptr<float>();
         switch (weight_dtype) {
             case DType::Int4:
-                kernel->operator()<KernelID::MatmulInt4Float>(
-                        dst, weights()[0]->ptr(), bias, src, M, N, K, p_workspace,
-                        p_workspace_size);
+                if (!m_weight_packed) {
+                    kernel->operator()<KernelID::MatmulInt4Float>(
+                            dst, weights()[0]->ptr(), bias, src, M, N, K, p_workspace,
+                            p_workspace_size);
+                } else {
+                    kernel->operator()<KernelID::MatmulInt4FloatPacked>(
+                            dst, weights()[0]->ptr(), bias, src, M, N * PACK_SIZE, K,
+                            p_workspace, p_workspace_size);
+                }
                 break;
             case DType::Int8:
                 kernel->operator()<KernelID::MatmulInt8Float>(
@@ -203,6 +210,23 @@ size_t MatMul::get_workspace_in_byte() {
     return 0;
 }
 
+//! all the memory is the host memory
+std::vector<size_t> MatMul::preprocess_weight(Tensor* tensor, void* src, void* dst) {
+    INFER_ASSERT(tensor->dtype() == DType::Int4, "only support optimized int4 kernel");
+    auto weight_shape = tensor->shape();
+    size_t M = weight_shape[0];
+    size_t N = weight_shape[1];
+    INFER_ASSERT(N % QK40 == 0, "error of embd size.");
+    INFER_ASSERT(M % PACK_SIZE == 0, "the M in matmul is not align to 8.");
+
+    auto kernel = get_kernel();
+    kernel->operator()<KernelID::MatmulInt4WeightReorder>(M, N, dst, src, PACK_SIZE);
+    size_t block_m = M / PACK_SIZE;
+
+    m_weight_packed = true;
+    return {block_m, N * PACK_SIZE};
+}
+
 void MatMulLast::execute(WorkSpace* workspace, uint32_t) {
     auto N = weights()[0]->shape()[0];
     auto K = weights()[0]->shape()[1];
@@ -223,9 +247,15 @@ void MatMulLast::execute(WorkSpace* workspace, uint32_t) {
         const float* src = inputs()[0]->ptr<float>() + (row - 1) * K;
         switch (weight_dtype) {
             case DType::Int4:
-                kernel->operator()<KernelID::MatmulInt4Float>(
-                        dst, weights()[0]->ptr(), bias, src, M, N, K, p_workspace,
-                        p_workspace_size);
+                if (!m_weight_packed) {
+                    kernel->operator()<KernelID::MatmulInt4Float>(
+                            dst, weights()[0]->ptr(), bias, src, M, N, K, p_workspace,
+                            p_workspace_size);
+                } else {
+                    kernel->operator()<KernelID::MatmulInt4FloatPacked>(
+                            dst, weights()[0]->ptr(), bias, src, M, N * PACK_SIZE, K,
+                            p_workspace, p_workspace_size);
+                }
                 break;
             case DType::Int8:
                 kernel->operator()<KernelID::MatmulInt8Float>(

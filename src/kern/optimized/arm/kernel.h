@@ -29,6 +29,10 @@ TaskSet llm_matmul_compute_int4_float(
         float* dst, const void* src0, const float* bias, const float* src1, uint32_t M,
         uint32_t N, uint32_t K, void* workspace, uint32_t size);
 
+TaskSet llm_matmul_compute_int4_float_packed(
+        float* dst, const void* src0, const float* bias, const float* src1, uint32_t M,
+        uint32_t N, uint32_t K, void* workspace, uint32_t size);
+
 size_t llm_matmul_get_workspace_float(
         uint32_t nr_thread, uint32_t M, uint32_t N, uint32_t K);
 
@@ -46,6 +50,7 @@ PartialImplementKernel(
 PartialImplementKernel(RmsNormFloat, llm_rms_norm_compute_float);
 PartialImplementKernel(EmbeddingGetInt4Float, llm_embedding_get_int4_float);
 PartialImplementKernel(MatmulInt4Float, llm_matmul_compute_int4_float);
+PartialImplementKernel(MatmulInt4FloatPacked, llm_matmul_compute_int4_float_packed);
 PartialImplementKernel(
         MatmulWithHeadStrideFloat, llm_matmul_compute_with_head_stride_float);
 PartialImplementKernel(HeadBatchedMatmulFloat, llm_head_batched_matmul_compute_float);

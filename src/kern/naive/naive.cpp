@@ -277,6 +277,44 @@ TaskSet llm_matmul_compute_int4_float(
     return TaskSet{{task1, M}, {task2, N}};
 }
 
+TaskSet llm_matmul_compute_int4_float_packed(
+        float* dst, const void* src0, const float* bias, const float* src1, uint32_t M,
+        uint32_t N, uint32_t K, void* workspace, uint32_t size) {
+    //! src0 is quantized weights, weights store in 32 data as block and a block
+    //! share the same scale, src1 is featureMap. src0 layout is {N,
+    //! K}, src1 layout is {M, K}, the dst is {M, N}
+    INFER_ASSERT(sizeof(float) * K <= size, "workspace is not enough.");
+    uint32_t weight_q40_stride =
+            K * dtype_in_byte(DType::Int4) / dtype_block_size(DType::Int4);
+    uint32_t weight_q80_stride =
+            K * dtype_in_byte(DType::Int8) / dtype_block_size(DType::Int8);
+    //! dequantize input, and store in workspace
+    //! becuase the input is small than the weights, quantized the input will
+    //! reduce the memory traffic
+    auto task1 = [=](const TaskId& id) {
+        for (uint32_t m = id.start; m < id.end; m++) {
+            BlockQ80* q_src1 =
+                    (BlockQ80*)(static_cast<uint8_t*>(workspace) + m * weight_q80_stride);
+            quantize_row_q8_0_reference(src1 + m * K, q_src1, K);
+        }
+    };
+    int8_t* q_src = static_cast<int8_t*>(workspace);
+    auto task2 = [=](const TaskId& id) {
+        for (uint32_t n = id.start; n < id.end && n < N / 8; n++) {
+            const void* q_weight =
+                    static_cast<const uint8_t*>(src0) + n * 8 * weight_q40_stride;
+            for (uint32_t m = 0; m < M; m++) {
+                int8_t* src = q_src + m * weight_q80_stride;
+                float* dst_ptr = dst + m * N + n * 8;
+                const float* bias_ptr = bias ? bias + n * 8 : nullptr;
+                vec_vec_dot_q40_with_q80_packed_reference(
+                        K, q_weight, src, dst_ptr, bias_ptr);
+            }
+        }
+    };
+    return TaskSet{{task1, M}, {task2, N / 8}};
+}
+
 TaskSet llm_matmul_compute_int8_float(
         float* dst, const void* src0, const float* bias, const float* src1, uint32_t M,
         uint32_t N, uint32_t K, void* workspace, uint32_t size) {
@@ -376,7 +414,7 @@ TaskSet llm_rope_compute_float(
         return TaskSet{{task, ne1}};
     } else {
         auto task = [=](const TaskId& id) {
-            for (int i1 = id.start; i1 < id.end; i1++) {
+            for (int i1 = id.start; i1 < id.end && i1 < ne1; i1++) {
                 for (int i2 = (mode == 0 ? 0 : n_past); i2 < ne2; i2++) {
                     const int p = (mode == 0 ? n_past + i2 : i2);
                     for (int i0 = 0; i0 < n_dims; i0 += 2) {
@@ -412,7 +450,7 @@ TaskSet llm_glm_rope_compute_float(
     int quart_embd = embd / 4;
     int half_embd = embd / 2;
     auto task = [=](const TaskId& id) {
-        for (int h = id.start; h < id.end; h++) {
+        for (int h = id.start; h < id.end && h < head; h++) {
             for (int seq = 0; seq < seqlen; seq++) {
                 int position_id = std::min(seq + n_past, gmask_positon);
                 int block_position_id =
@@ -460,7 +498,7 @@ TaskSet llm_diag_mask_inf_float(
     const int nz = head;
 
     auto task = [=](const TaskId& id) {
-        for (int k = id.start; k < id.end; k++) {
+        for (int k = id.start; k < id.end && k < head; k++) {
             for (int j = 0; j < nr; j++) {
                 for (uint32_t i = n_past; i < nc; i++) {
                     if (i > n_past + j) {
@@ -481,7 +519,7 @@ TaskSet llm_glm_gmask_inf_float(
     //! the last row
     const int nc = n_past + seqlen;
     auto task = [=](const TaskId& id) {
-        for (int k = id.start; k < id.end; k++) {
+        for (int k = id.start; k < id.end && k < head; k++) {
             for (int j = 0; j < seqlen - 1; j++) {
                 dst[k * nc * seqlen + j * nc + nc - 1] = -INFINITY;
             }
@@ -498,7 +536,7 @@ TaskSet llm_scale_diag_mask_inf_float(
     const int nz = head;
 
     auto task = [=](const TaskId& id) {
-        for (int k = id.start; k < id.end; k++) {
+        for (int k = id.start; k < id.end && k < head; k++) {
             for (int j = 0; j < seqlen; j++) {
                 for (uint32_t i = 0; i < nc; i++) {
                     uint32_t index = k * nc * nr + j * nc + i;
@@ -544,7 +582,7 @@ TaskSet llm_matmul_compute_with_head_strideq_broadcastk_float(
     uint32_t stride_k = query_group_num * sub_embd;
     uint32_t head_pre_group = head / query_group_num;
     auto task = [=](const TaskId& id) {
-        for (uint32_t h = id.start; h < id.end; h++) {
+        for (uint32_t h = id.start; h < id.end && h < head; h++) {
             auto dst_head = dst + h * seqlen * (nr_past + seqlen);
             auto srck_head = srck + h / head_pre_group * sub_embd;
             auto srcq_head = srcq + h * sub_embd;
@@ -572,7 +610,7 @@ TaskSet llm_matmul_compute_with_head_stride_float(
     uint32_t length = nr_past + seqlen;
     uint32_t line_stride = embd;
     auto task = [=](const TaskId& id) {
-        for (uint32_t h = id.start; h < id.end; h++) {
+        for (uint32_t h = id.start; h < id.end && h < head; h++) {
             auto dst_head = dst + h * seqlen * (nr_past + seqlen);
             auto srck_head = srck + h * sub_embd;
             auto srcq_head = srcq + h * sub_embd;
@@ -602,7 +640,7 @@ TaskSet llm_head_batched_matmul_broadcastv_float(
     uint32_t stride_v = sub_embd * query_group_num;
     uint32_t head_pre_group = head / query_group_num;
     auto task = [=](const TaskId& id) {
-        for (uint32_t h = id.start; h < id.end; h++) {
+        for (uint32_t h = id.start; h < id.end && h < head; h++) {
             float* dst_head = dst + h * sub_embd;
             const float* v_head = v + h / head_pre_group * sub_embd;
             const float* qk_head = qk + h * seqlen * length;
@@ -631,7 +669,7 @@ TaskSet llm_head_batched_matmul_compute_float(
     uint32_t line_stride = embd;
 
     auto task = [=](const TaskId& id) {
-        for (uint32_t h = id.start; h < id.end; h++) {
+        for (uint32_t h = id.start; h < id.end && h < head; h++) {
             float* dst_head = dst + h * sub_embd;
             const float* v_head = v + h * sub_embd;
             const float* qk_head = qk + h * seqlen * length;
@@ -650,6 +688,34 @@ TaskSet llm_head_batched_matmul_compute_float(
         }
     };
     return TaskSet{{task, head}};
+}
+
+TaskSet llm_int4_matmul_weight_reorder(
+        size_t M, size_t N, void* dst, void* src, size_t PACK_SIZE) {
+    INFER_ASSERT(N % QK40 == 0, "error of embd size.");
+    INFER_ASSERT(M % PACK_SIZE == 0, "the M in matmul is not align to 8.");
+    size_t block_size = N / QK40;
+    size_t block_m = M / PACK_SIZE;
+    size_t src_stride = N * dtype_in_byte(DType::Int4) / dtype_block_size(DType::Int4);
+
+    auto task = [=](const TaskId& id) {
+        BlockQ40X8* dst_block = static_cast<BlockQ40X8*>(dst);
+        for (int bm = id.start; bm < id.end && bm < block_m; bm++) {
+            for (int bn = 0; bn < block_size; bn++) {
+                BlockQ40X8* dst_block_ptr = dst_block + bm * block_size + bn;
+                for (int i = 0; i < PACK_SIZE; i++) {
+                    const char* src_ptr = static_cast<const char*>(src) +
+                                          (bm * PACK_SIZE + i) * src_stride +
+                                          bn * sizeof(BlockQ40);
+                    BlockQ40* block = (BlockQ40*)src_ptr;
+                    uint32_t size = QK40 / 2;
+                    memcpy(dst_block_ptr->qs + i * size, block->qs, size);
+                    dst_block_ptr->scale[i] = block->d;
+                }
+            }
+        }
+    };
+    return TaskSet{{task, block_m}};
 }
 }  // namespace naive
 }  // namespace inferllm

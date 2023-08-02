@@ -39,6 +39,16 @@ public:
         return m_thread_pool->nr_threads();
     }
 
+    bool supported_optimization(KernelOptMethod method) {
+        if (m_kernel_type == KernelType::Arm || m_kernel_type == KernelType::Naive ||
+            m_kernel_type == KernelType::X86) {
+            if (method == KernelOptMethod::MatmulInt4Reorder) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     //! compute
     template <KernelID Id, typename... Args>
     void operator()(Args... args) {
