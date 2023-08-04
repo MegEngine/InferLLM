@@ -26,10 +26,10 @@ void ModelImp::prefill(const std::string& promote) {
         m_last_queue.push_back(token);
         m_last_queue.pop_front();
     }
-    auto start = m_timer.get_time();
+    //auto start = m_timer.get_time();
     m_graph->execute(tokens, m_logist, m_past, true);
-    auto end = m_timer.get_time();
-    m_time_cost += end - start;
+    //auto end = m_timer.get_time();
+    //m_time_cost += end - start;
     m_past = tokens.size();
 }
 
@@ -41,10 +41,10 @@ std::string ModelImp::decode(const std::string& user_input, int& token) {
         m_last_queue.push_back(token);
         m_last_queue.pop_front();
     }
-    auto start = m_timer.get_time();
+    //auto start = m_timer.get_time();
     m_graph->execute(tokens, m_logist, m_past, false);
-    auto end = m_timer.get_time();
-    m_time_cost += end - start;
+    //auto end = m_timer.get_time();
+    //m_time_cost += end - start;
     sample_and_update();
     m_past += tokens.size();
     token = m_pre_token;

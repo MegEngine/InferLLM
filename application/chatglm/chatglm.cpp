@@ -211,6 +211,7 @@ int main(int argc, char** argv) {
     std::string user_input, output;
     
     int iter = 0;
+    int token_id = 0;
     //! main loop
     while (model->get_remain_token() > 0) {
         if (!user_input.empty()) {
@@ -226,8 +227,12 @@ int main(int argc, char** argv) {
             auto o = model->decode_iter(token);
             fix_word(o);
             output += o;
+            token_id++;
             printf("%s", output.c_str());
             fflush(stdout);
+            if (token_id % 10 == 0) {
+                running_summary = model->decode_summary();
+            }
 
             // token 2 is the end of the instruction
             if (token == etoken) {

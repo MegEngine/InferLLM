@@ -84,8 +84,8 @@ struct BlockQ40 {
 static_assert(sizeof(BlockQ40) == 20, "BlockQ40 size error");
 
 struct BlockQ40X8 {
-    float scale[8];               // delta
     uint8_t qs[QK40 / 2 * 8];     // nibbles / quants
+    float scale[8];               // delta
 };
 static_assert(sizeof(BlockQ40X8) == 160, "BlockQ40X8 size error");
 
