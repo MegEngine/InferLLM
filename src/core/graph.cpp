@@ -5,6 +5,7 @@
 #include <regex>
 #include <vector>
 
+#include "Tracy.hpp"
 #include "graph.h"
 
 using namespace inferllm;
@@ -16,7 +17,10 @@ void OprModuleBase::deduce_output_shape() {
 }
 
 void OprModuleBase::execute(WorkSpace* workspace, uint32_t nr_past, bool) {
+    ZoneScopedNS("opr", 4);
     for (auto opr : m_oprs) {
+        auto sname = opr->name();
+        ZoneText(sname.data(), sname.size());
         opr->pre_execute();
 #ifdef INFER_PROFILE
         struct timeval start, end;
@@ -169,7 +173,7 @@ void Graph::execute(
     if (m_input->dims() == 0 || !same_input_shape(in_token)) {
         m_input->set_shape({in_token.size()}, DType::Int32);
         size_t len = get_workspace_in_byte();
-        if(m_workspace->ptr() == nullptr) {
+        if (m_workspace->ptr() == nullptr) {
             auto data = m_device->allocate(len);
             m_workspace->set_memory(data, len);
         } else if (m_workspace->ptr() && len > m_workspace->length()) {

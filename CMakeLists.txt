@@ -4,9 +4,16 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS
     CACHE INTERNAL "")
 project(InferLLM LANGUAGES C CXX ASM)
 
+find_program(CCACHE_FOUND ccache)
+if(CCACHE_FOUND)
+    set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ccache)
+    set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK ccache) # Less useful to do it for linking, see edit2
+endif(CCACHE_FOUND)
+
 option(ENABLE_ASAN "Build with asan." OFF)
 option(ENABLE_PROFILE "Build with profile information." OFF)
 option(ENABLE_GPROF "Build with gprof enabled." OFF)
+option(ENABLE_TRACY "Build with tracy enabled." OFF)
 option(ENABLE_DOT "Build with Arm dotprod." OFF)
 option(ENABLE_FP16 "Build with Arm FP16." OFF)
 option(ENABLE_GPU "Build with GPU." OFF)
@@ -80,17 +87,17 @@ if(ENABLE_GPU)
 endif()
 add_library(InferLLM STATIC ${SRC} ${PLTSRC})
 
-add_library(InferLLMShared SHARED  ${SRC} ${PLTSRC})
-set_target_properties(InferLLMShared PROPERTIES PUBLIC_HEADER ${CMAKE_SOURCE_DIR}/include/model.h)
-
 target_include_directories(InferLLM PUBLIC include src)
-target_include_directories(InferLLMShared PUBLIC include src)
 
-if(CMAKE_BUILD_TYPE MATCHES "Debug")
-  set(CMAKE_CXX_FLAGS " -g -O0 ${CMAKE_CXX_FLAGS}")
-else()
-  set(CMAKE_CXX_FLAGS " -O3 -g ${CMAKE_CXX_FLAGS}")
+target_include_directories(InferLLM PUBLIC ./tracy/public/tracy)
+if(ENABLE_TRACY)
+add_library(TracyClient STATIC ./tracy/public/TracyClient.cpp)
+target_include_directories(TracyClient PUBLIC ./tracy/public/tracy)
+target_compile_definitions(TracyClient PUBLIC TRACY_ENABLE TRACY_MANUAL_LIFETIME TRACY_NO_SYSTEM_TRACING TRACY_DELAYED_INIT)
+target_link_libraries(InferLLM PUBLIC TracyClient ${CMAKE_DL_LIBS} pthread)
 endif()
+
+set(CMAKE_CXX_FLAGS " -g ${CMAKE_CXX_FLAGS}")
 
 if(ENABLE_GPROF)
   include(CheckCXXCompilerFlag)

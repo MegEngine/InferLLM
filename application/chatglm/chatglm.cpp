@@ -1,3 +1,4 @@
+#include <Tracy.hpp>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -109,6 +110,9 @@ bool app_params_parse(int argc, char** argv, app_params& params) {
 std::string running_summary;
 #if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__)) || defined(_WIN32)
 void sigint_handler(int signo) {
+#ifdef TRACY_ENABLE
+    tracy::ShutdownProfiler();
+#endif
     if (signo == SIGINT) {
         printf("\n");
         printf("%s", running_summary.c_str());
@@ -119,6 +123,9 @@ void sigint_handler(int signo) {
 
 int main(int argc, char** argv) {
     app_params params;
+#ifdef TRACY_ENABLE
+    tracy::StartupProfiler();
+#endif
 
     if (app_params_parse(argc, argv, params) == false) {
         return 1;
@@ -209,7 +216,7 @@ int main(int argc, char** argv) {
     };
     bool is_interacting = true;
     std::string user_input, output;
-    
+
     int iter = 0;
     //! main loop
     while (model->get_remain_token() > 0) {
@@ -238,6 +245,7 @@ int main(int argc, char** argv) {
             output.clear();
             // after answering the question, get the user input again
         } else {
+            model->deactive();
             printf("\n> ");
             bool another_line = true;
             if (params.version == 2) {
@@ -250,7 +258,8 @@ int main(int argc, char** argv) {
                 char* buf = const_cast<char*>(input.data());
                 int n_read;
                 int res = scanf("%255[^\n]%n%*c", buf, &n_read);
-                if (res == EOF) return 0;
+                if (res == EOF)
+                    return 0;
                 else if (res <= 0) {
                     // presumable empty line, consume the newline
                     if (scanf("%*c") <= 0) { /*ignore*/
@@ -270,8 +279,12 @@ int main(int argc, char** argv) {
             if (params.version == 2) {
                 user_input += "\n\n答：";
             }
+            model->active();
         }
         iter++;
     }
+#ifdef TRACY_ENABLE
+    tracy::ShutdownProfiler();
+#endif
     return 0;
 }

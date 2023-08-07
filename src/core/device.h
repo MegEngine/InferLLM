@@ -38,6 +38,7 @@ public:
 
     virtual void aligned_free(void* ptr);
 
+    virtual void active() {}
     virtual void deactive() {}
 
     virtual void host2device_copy(
@@ -68,6 +69,7 @@ public:
 
     void free_device(void* ptr) override;
 
+    void active() override { m_thread_pool->active(); }
     void deactive() override { m_thread_pool->deactive(); }
 
     void host2device_copy(

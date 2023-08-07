@@ -20,6 +20,14 @@ void Model::init(
             top_k, top_p, temp, repeat_penalty, repeat_last_n, seed, end_token);
 }
 
+void Model::active() {
+    m_model_imp->active();
+}
+
+void Model::deactive() {
+    m_model_imp->deactive();
+}
+
 uint32_t Model::get_remain_token() {
     return m_model_imp->get_remain_token();
 }

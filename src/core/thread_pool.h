@@ -12,6 +12,13 @@
 
 namespace inferllm {
 
+typedef enum {
+    WRK_IDLE = 0,   // use cv to lock
+    WRK_STOP,       // exit
+    WRK_BUSY_WAIT,  // busy loop
+    WRK_START,      // real start
+} worker_status_t;
+
 /**
  * \brief Worker and related flag
  */
@@ -21,8 +28,7 @@ public:
     ~Worker() { thread.join(); }
     //! Worker thread
     std::thread thread;
-    //! Indicate whether the Worker thread need run
-    std::atomic<bool> work_flag{false};
+    std::atomic<worker_status_t> work_flag{WRK_IDLE};
 };
 
 /**
@@ -40,7 +46,7 @@ public:
     inline void sync();
     //! wake up all the threads from cv.wait(), when the thread pool is not
     //! active, all the threads will go to sleep.
-    inline void active();
+    void active();
     //! all the threads go to sleep which will reduce CPU occupation
     void deactive();
     ~ThreadPool();
@@ -52,15 +58,12 @@ private:
     //! All the sub task number
     uint32_t m_nr_task = 0;
     uint32_t m_task_per_thread = 0;
-    std::atomic_bool m_stop{false};
-    std::atomic_bool m_active{false};
     //! The executable funcition pointer
     MultiThreadingTask m_task;
 
     std::vector<Worker*> m_workers;
-    //! The cv and mutex for threading activity
     std::condition_variable m_cv;
-    std::mutex m_mutex;
+    std::mutex m_mtx;
 };
 
 }  // namespace inferllm

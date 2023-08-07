@@ -65,16 +65,13 @@ std::string ModelImp::decode_iter(int& token) {
 
 int32_t ModelImp::sample_and_update() {
     // sample the next token
-   auto token = llama_sample_top_p_top_k(
-           *m_vocab, m_logist.data(), m_last_queue, m_repeat_penalty, m_top_k, m_top_p,
-           m_temp, m_rng);
+    auto token = llama_sample_top_p_top_k(
+            *m_vocab, m_logist.data(), m_last_queue, m_repeat_penalty, m_top_k, m_top_p,
+            m_temp, m_rng);
     // update the last queue
     m_last_queue.push_back(token);
     m_last_queue.pop_front();
     m_pre_token = token;
-    if (token == m_end_token) {
-        m_device->deactive();
-    }
     return token;
 }
 
@@ -136,7 +133,7 @@ std::string ModelImp::decode_summary() const {
     ret += "Total Model Compute Token:  " + std::to_string(m_past) + "\n";
     ret += "Average Token Compute Time: " +
            std::to_string(m_time_cost * 1000 / m_past) + "ms\n";
-    ret += "Average Token Generation Speed: " +
-           std::to_string(m_past / m_time_cost) + "token/s\n";
+    ret += "Average Token Generation Speed: " + std::to_string(m_past / m_time_cost) +
+           "token/s\n";
     return ret;
 }

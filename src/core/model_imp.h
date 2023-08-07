@@ -82,6 +82,14 @@ public:
         m_rng = std::mt19937(seed);
     }
 
+    void active() {
+			m_device->active();
+		}
+
+    void deactive() {
+			m_device->deactive();
+		}
+
     //! prefill the model with inference with the given promote
     void prefill(const std::string& promote);
 
