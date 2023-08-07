@@ -33,7 +33,7 @@ ThreadPool::ThreadPool(uint32_t threads_num)
                             m_workers[i]->work_flag = false;
                         }
                         //! Wait next task coming
-                        std::this_thread::yield();
+                        //std::this_thread::yield();
                     }
                     {
                         std::unique_lock<std::mutex> lock(m_mutex);
@@ -79,9 +79,9 @@ inline void ThreadPool::sync() {
                 break;
             }
         }
-        if (no_finished) {
-            std::this_thread::yield();
-        }
+        // if (no_finished) {
+        //     std::this_thread::yield();
+        // }
     } while (no_finished);
 }
 inline void ThreadPool::active() {
