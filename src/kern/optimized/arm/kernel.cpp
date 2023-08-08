@@ -234,8 +234,11 @@ TaskSet llm_matmul_compute_int4_float_packed(
                 int8_t* src = q_src + m * weight_q80_stride;
                 float* dst_ptr = dst + m * N + n * 8;
                 const float* bias_ptr = bias ? bias + n * 8 : nullptr;
-                //vec_vec_dot_q40_with_q80_packed(K, q_weight, src, dst_ptr, bias_ptr);
-                vec_vec_dot_q40_with_q80_packed_asm(K, q_weight, src, dst_ptr, bias_ptr);
+#if defined(__ARM_FEATURE_DOTPROD)
+                vec_vec_dot_q40_with_q80_packed(K, q_weight, src, dst_ptr, bias_ptr);
+                // vec_vec_dot_q40_with_q80_packed_asm(K, q_weight, src, dst_ptr,
+                // bias_ptr);
+#endif
             }
         }
     };

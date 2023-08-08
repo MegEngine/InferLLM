@@ -8,6 +8,7 @@
 #include <memory>
 #include <regex>
 #include <unordered_map>
+#include "file.h"
 
 namespace inferllm {
 namespace test {
@@ -126,7 +127,7 @@ class Checker : public CheckerHelper {
 public:
     Checker(Device* device, Device* naive) : CheckerHelper(device, naive) {}
 
-    Checker& exec(const TensorShapeArray& shapes);
+    float exec(const TensorShapeArray& shapes);
 
     Checker& set_dtype(size_t idx, DType dtype) {
         m_dtype[idx] = dtype;
@@ -155,6 +156,17 @@ public:
         return *this;
     }
 
+    Checker& weight_packed(bool packed) {
+        m_weight_packed = packed;
+        return *this;
+    }
+
+    Checker& profile(size_t times){
+        m_profile = true;
+        m_profile_times = times;
+        return *this;
+    }
+
     template <typename... Args>
     void create_opr(Args... args);
 
@@ -170,10 +182,15 @@ private:
     std::shared_ptr<Tensor> m_naive_output;
     std::shared_ptr<Tensor> m_device_output;
     std::shared_ptr<Tensor> m_deivce_output_CPU;
+
+    bool m_weight_packed = false;
+    bool m_profile = false;
+    bool m_profile_times = 1;
+    double m_timeuse = 0.0;
 };
 
 template <typename Opr>
-Checker<Opr>& Checker<Opr>::exec(const TensorShapeArray& shapes) {
+float Checker<Opr>::exec(const TensorShapeArray& shapes) {
     //! set tensor shape
     INFER_ASSERT(
             shapes.size() == m_naive_values.size(),
@@ -249,6 +266,15 @@ Checker<Opr>& Checker<Opr>::exec(const TensorShapeArray& shapes) {
         host2device(m_device_weights[index], weight);
         index++;
     }
+
+    if (m_weight_packed) {
+        for (auto weight : m_naive_weights) {
+            weight->preprocess_data();
+        }
+        for (auto weight : m_device_weights) {
+            weight->preprocess_data();
+        }
+    }
     //! deduce output shape
     m_deivce_output_CPU = std::make_shared<Tensor>(m_naive_device, "deivce_output_CPU");
     m_naive_opr->deduce_output_shape();
@@ -272,6 +298,21 @@ Checker<Opr>& Checker<Opr>::exec(const TensorShapeArray& shapes) {
     //! exec opr
     m_naive_opr->execute(naive_workspace.get(), m_past);
     m_device_opr->execute(device_workspace.get(), m_past);
+
+    if (m_profile) {
+        // warmup
+        for (size_t i = 0; i < 5; i++) {
+            m_device_opr->execute(naive_workspace.get(), m_past);
+        }
+        struct timeval start, end;
+        gettimeofday(&start, NULL);
+        for (size_t i = 0; i < m_profile_times; i++) {
+            m_device_opr->execute(device_workspace.get(), m_past);
+        }
+        gettimeofday(&end, NULL);
+        m_timeuse =
+                (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec);
+    }
     //! copy device value to host
     m_device->device2host_copy(
             m_deivce_output_CPU->ptr(), m_device_output->ptr(),
@@ -296,7 +337,7 @@ Checker<Opr>& Checker<Opr>::exec(const TensorShapeArray& shapes) {
     m_naive_output->recall_data();
     m_device_output->recall_data();
     m_deivce_output_CPU->recall_data();
-    return *this;
+    return m_timeuse;
 }
 
 }  // namespace test

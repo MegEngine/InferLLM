@@ -40,11 +40,15 @@ public:
     }
 
     bool supported_optimization(KernelOptMethod method) {
-        if (m_kernel_type == KernelType::Arm || m_kernel_type == KernelType::Naive ||
-            m_kernel_type == KernelType::X86) {
+        if (m_kernel_type == KernelType::Arm || m_kernel_type == KernelType::Naive) {
             if (method == KernelOptMethod::MatmulInt4Reorder) {
+#if defined(__ARM_FEATURE_DOTPROD)
                 return true;
+#else
+                return false;
+#endif
             }
+            return false;
         }
         return false;
     }
@@ -77,6 +81,6 @@ public:
     void set_handle(cudaHandle* handle) { m_handle = handle; }
     cudaHandle* m_handle;
 #endif
-};
+    };
 
 }  // namespace inferllm

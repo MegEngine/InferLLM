@@ -296,7 +296,9 @@ size_t AttentionBase::get_workspace_in_byte() {
     uint32_t K = inputs()[0]->shape()[1];
     uint32_t N = weights()[0]->shape()[0];
     auto kernel = get_kernel();
-
+    if (m_packed_weight) {
+        N *= PACK_SIZE;
+    }
     uint32_t seqlen = input->shape()[0];
 
     size_t total = 0;
@@ -324,6 +326,23 @@ size_t AttentionBase::get_workspace_in_byte() {
         total += m_head * seqlen * m_ctx * sizeof(float);
     }
     return total;
+}
+
+std::vector<size_t> AttentionBase::preprocess_weight(
+        Tensor* tensor, void* src, void* dst) {
+    INFER_ASSERT(tensor->dtype() == DType::Int4, "only support optimized int4 kernel");
+    auto weight_shape = tensor->shape();
+    size_t M = weight_shape[0];
+    size_t N = weight_shape[1];
+    INFER_ASSERT(N % QK40 == 0, "error of embd size.");
+    INFER_ASSERT(M % PACK_SIZE == 0, "the M in matmul is not align to 8.");
+
+    auto kernel = get_kernel();
+    kernel->operator()<KernelID::MatmulInt4WeightReorder>(M, N, dst, src, PACK_SIZE);
+    size_t block_m = M / PACK_SIZE;
+
+    m_packed_weight = true;
+    return {block_m, N * PACK_SIZE};
 }
 
 void LlamaAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
@@ -398,12 +417,27 @@ void LlamaAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
         float* p_outq = static_cast<float*>(q_out);
         switch (w_dtype) {
             case DType::Int4:
-                kernel->operator()<KernelID::MatmulInt4Float>(
-                        p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work, size);
-                kernel->operator()<KernelID::MatmulInt4Float>(
-                        p_outk, p_wk, p_bk, pdata, seqlen, embd, embd, p_work, size);
-                kernel->operator()<KernelID::MatmulInt4Float>(
-                        p_outv, p_wv, p_bv, pdata, seqlen, embd, embd, p_work, size);
+                if (!m_packed_weight) {
+                    kernel->operator()<KernelID::MatmulInt4Float>(
+                            p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work,
+                            size);
+                    kernel->operator()<KernelID::MatmulInt4Float>(
+                            p_outk, p_wk, p_bk, pdata, seqlen, embd, embd, p_work,
+                            size);
+                    kernel->operator()<KernelID::MatmulInt4Float>(
+                            p_outv, p_wv, p_bv, pdata, seqlen, embd, embd, p_work,
+                            size);
+                } else {
+                    kernel->operator()<KernelID::MatmulInt4FloatPacked>(
+                            p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work,
+                            size);
+                    kernel->operator()<KernelID::MatmulInt4FloatPacked>(
+                            p_outk, p_wk, p_bk, pdata, seqlen, embd, embd, p_work,
+                            size);
+                    kernel->operator()<KernelID::MatmulInt4FloatPacked>(
+                            p_outv, p_wv, p_bv, pdata, seqlen, embd, embd, p_work,
+                            size);
+                }
                 break;
             case DType::Int8:
                 kernel->operator()<KernelID::MatmulInt8Float>(
@@ -541,12 +575,27 @@ void GlmAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
         float* p_outq = static_cast<float*>(q_out);
         switch (w_dtype) {
             case DType::Int4:
-                kernel->operator()<KernelID::MatmulInt4Float>(
-                        p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work, size);
-                kernel->operator()<KernelID::MatmulInt4Float>(
-                        p_outk, p_wk, p_bk, pdata, seqlen, embd, embd, p_work, size);
-                kernel->operator()<KernelID::MatmulInt4Float>(
-                        p_outv, p_wv, p_bv, pdata, seqlen, embd, embd, p_work, size);
+                if (!m_packed_weight) {
+                    kernel->operator()<KernelID::MatmulInt4Float>(
+                            p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work,
+                            size);
+                    kernel->operator()<KernelID::MatmulInt4Float>(
+                            p_outk, p_wk, p_bk, pdata, seqlen, embd, embd, p_work,
+                            size);
+                    kernel->operator()<KernelID::MatmulInt4Float>(
+                            p_outv, p_wv, p_bv, pdata, seqlen, embd, embd, p_work,
+                            size);
+                } else {
+                    kernel->operator()<KernelID::MatmulInt4FloatPacked>(
+                            p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work,
+                            size);
+                    kernel->operator()<KernelID::MatmulInt4FloatPacked>(
+                            p_outk, p_wk, p_bk, pdata, seqlen, embd, embd, p_work,
+                            size);
+                    kernel->operator()<KernelID::MatmulInt4FloatPacked>(
+                            p_outv, p_wv, p_bv, pdata, seqlen, embd, embd, p_work,
+                            size);
+                }
                 break;
             case DType::Int8:
                 kernel->operator()<KernelID::MatmulInt8Float>(
@@ -673,15 +722,27 @@ void Glm2MultiQueryAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
         float* p_outq = static_cast<float*>(q_out);
         switch (w_dtype) {
             case DType::Int4:
-                kernel->operator()<KernelID::MatmulInt4Float>(
-                        p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work, size);
-                kernel->operator()<KernelID::MatmulInt4Float>(
-                        p_outk, p_wk, p_bk, pdata, seqlen, kv_length, embd, p_work,
-                        size);
-                kernel->operator()<KernelID::MatmulInt4Float>(
-                        p_outv, p_wv, p_bv, pdata, seqlen, kv_length, embd, p_work,
-                        size);
-                break;
+                if (!m_packed_weight) {
+                    kernel->operator()<KernelID::MatmulInt4Float>(
+                            p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work,
+                            size);
+                    kernel->operator()<KernelID::MatmulInt4Float>(
+                            p_outk, p_wk, p_bk, pdata, seqlen, kv_length, embd, p_work,
+                            size);
+                    kernel->operator()<KernelID::MatmulInt4Float>(
+                            p_outv, p_wv, p_bv, pdata, seqlen, kv_length, embd, p_work,
+                            size);
+                } else {
+                    kernel->operator()<KernelID::MatmulInt4FloatPacked>(
+                            p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work,
+                            size);
+                    kernel->operator()<KernelID::MatmulInt4FloatPacked>(
+                            p_outk, p_wk, p_bk, pdata, seqlen, kv_length, embd, p_work,
+                            size);
+                    kernel->operator()<KernelID::MatmulInt4FloatPacked>(
+                            p_outv, p_wv, p_bv, pdata, seqlen, kv_length, embd, p_work,
+                            size);
+                }
             case DType::Int8:
                 kernel->operator()<KernelID::MatmulInt8Float>(
                         p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work, size);

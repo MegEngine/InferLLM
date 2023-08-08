@@ -7,6 +7,7 @@
 namespace inferllm {
 
 using OpIOs = std::vector<std::shared_ptr<Tensor>>;
+constexpr static size_t PACK_SIZE = 8;
 
 //! Base class of an Op, the call step is:
 //! call deduce_output_shape to get the output tensor shape
@@ -161,10 +162,11 @@ public:
         auto kernel = get_kernel();
         //! only when the weight is int4
         if (weight->name() == weights()[0]->name()) {
+            size_t M = weight->shape()[0];
             bool optimized =
                     kernel->supported_optimization(KernelOptMethod::MatmulInt4Reorder);
             bool int4 = weight->dtype() == DType::Int4;
-            if (optimized && int4) {
+            if (optimized && int4 && (M % PACK_SIZE == 0)) {
                 return true;
             }
         }
@@ -179,7 +181,6 @@ public:
     size_t get_workspace_in_byte() override;
 
     bool m_bias = false;
-    constexpr static size_t PACK_SIZE = 8;
     bool m_weight_packed = false;
 };
 
@@ -384,6 +385,27 @@ public:
         m_vstorage->reset_id();
     }
 
+    virtual bool need_preprocess_weight(Tensor* weight) override {
+        auto kernel = get_kernel();
+        bool int4 = weight->dtype() == DType::Int4;
+        size_t M = weight->shape()[0];
+        bool right_weight = false;
+        bool optimized =
+                kernel->supported_optimization(KernelOptMethod::MatmulInt4Reorder);
+        //! only when the weight is int4
+        if (m_fused_weights) {
+            right_weight = weight->name() == weights()[0]->name();
+        } else {
+            right_weight = weight->name() == weights()[0]->name() ||
+                           weight->name() == weights()[1]->name() ||
+                           weight->name() == weights()[2]->name();
+        }
+        return optimized && int4 && right_weight && M % PACK_SIZE == 0;
+    }
+
+    virtual std::vector<size_t> preprocess_weight(
+            Tensor* tensor, void* src, void* dst) override;
+
 protected:
     uint32_t m_embd;
     uint32_t m_head;
@@ -391,6 +413,7 @@ protected:
     uint32_t m_layer_id;
     bool m_fused_weights;
     bool m_bias;
+    bool m_packed_weight = false;
 
     std::unique_ptr<KvStorage> m_kstorage;
     std::unique_ptr<KvStorage> m_vstorage;

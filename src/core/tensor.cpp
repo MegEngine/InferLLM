@@ -120,6 +120,33 @@ size_t Tensor::read_data_from_file() {
     return length;
 }
 
+void Tensor::preprocess_data() {
+    size_t length = length_in_byte();
+    INFER_ASSERT(m_data, "m_data should be not null when preprocess data.");
+    //! no unified memory, we need read data to host memory and copy to device
+    auto opr = this->owner_op();
+    if (!m_device->unified_memory()) {
+        if (opr->need_preprocess_weight(this)) {
+            auto host_src = m_device->allocate_host(length);
+            auto host_dst = m_device->allocate_host(length);
+            m_device->device2host_copy(host_src, m_data, length);
+            auto shape = opr->preprocess_weight(this, host_src, host_dst);
+            m_device->host2device_copy(m_data, host_dst, length);
+            set_shape(shape);
+            m_device->free_host(host_src);
+            m_device->free_host(host_dst);
+        }
+    } else {
+        if (opr->need_preprocess_weight(this)) {
+            void* new_data = m_device->allocate(length);
+            auto shape = opr->preprocess_weight(this, m_data, new_data);
+            set_shape(shape);
+            m_device->free_device(m_data);
+            m_data = new_data;
+        }
+    }
+}
+
 void Tensor::set_shared_memory(void* data, size_t size) {
     INFER_ASSERT(
             data == nullptr || size >= length_in_byte(),

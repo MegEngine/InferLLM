@@ -14,7 +14,7 @@ public:
 #if INFER_X86
         m_device = make_unique<CPUDevice>(KernelType::X86, 2);
 #elif INFER_ARM
-        m_device = make_unique<CPUDevice>(KernelType::Arm, 2);
+        m_device = make_unique<CPUDevice>(KernelType::Arm, 1);
 #endif
         m_naive = make_unique<CPUDevice>(KernelType::Naive, 1);
     }

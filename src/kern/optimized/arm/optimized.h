@@ -215,6 +215,7 @@ inline float vec_vec_dot_q40_with_q80(
     return vaddvq_f32(sumv0) + vaddvq_f32(sumv1);
 }
 
+#if defined(__ARM_FEATURE_DOTPROD)
 inline void vec_vec_dot_q40_with_q80_packed(
         const int n, const void* __restrict vx, const void* __restrict vy, float* dst,
         const float* bias) {
@@ -342,173 +343,6 @@ inline void vec_vec_dot_q40_with_q80_packed(
     vst1q_f32(dst + 4, sumv_1);
 }
 
-// inline void vec_vec_dot_q40_with_q80_packed_asm(
-//         const int n, const void* __restrict vx, const void* __restrict vy, float* dst,
-//         const float* bias) {
-//     int nb = n / QK80;
-
-//     assert(n % QK80 == 0);
-//     assert(nb % 2 == 0 && nb > 0);
-
-//     const void* __restrict x = vx;
-//     const void* __restrict y = vy;
-
-//     float bias_v[8] = {0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
-//     const float* bias_ptr = bias ? bias : bias_v;
-
-//     asm volatile(
-//             //! set all sum to 0
-//             "eor v0.16b, v0.16b, v0.16b\n"
-//             "eor v1.16b, v1.16b, v1.16b\n"
-//             "eor v2.16b, v2.16b, v2.16b\n"
-//             "eor v3.16b, v3.16b, v3.16b\n"
-//             "eor v4.16b, v4.16b, v4.16b\n"
-//             "eor v5.16b, v5.16b, v5.16b\n"
-//             "eor v6.16b, v6.16b, v6.16b\n"
-//             "eor v7.16b, v7.16b, v7.16b\n"
-
-//             //! main loop
-//             "1:\n"
-//             //! load constant 0x0f and 0x8
-//             "ld1 {v11.16b}, [%[x]], #16\n"
-//             "movi v8.16b, #0x0f\n"
-//             "ld1 {v13.16b}, [%[x]], #16\n"
-//             "movi v9.16b, #0x08\n"
-//             "ld1 {v15.16b}, [%[x]], #16\n"
-//             //! 4-bit -> 8-bit
-//             "and v10.16b, v11.16b, v8.16b\n"
-//             "ushr v11.16b, v11.16b, #4\n"
-
-//             "and v12.16b, v13.16b, v8.16b\n"
-//             "ushr v13.16b, v13.16b, #4\n"
-//             "ld1 {v17.16b}, [%[x]], #16\n"
-//             "sub v10.16b, v10.16b, v9.16b\n"
-//             "sub v11.16b, v11.16b, v9.16b\n"
-
-//             "and v14.16b, v15.16b, v8.16b\n"
-//             "ushr v15.16b, v15.16b, #4\n"
-//             "ld1 {v19.16b}, [%[x]], #16\n"
-//             "sub v12.16b, v12.16b, v9.16b\n"
-//             "sub v13.16b, v13.16b, v9.16b\n"
-
-//             "and v16.16b, v17.16b, v8.16b\n"
-//             "ushr v17.16b, v17.16b, #4\n"
-//             "ld1 {v21.16b}, [%[x]], #16\n"
-//             "sub v14.16b, v14.16b, v9.16b\n"
-//             "sub v15.16b, v15.16b, v9.16b\n"
-
-//             "and v18.16b, v19.16b, v8.16b\n"
-//             "ushr v19.16b, v19.16b, #4\n"
-//             "ld1r {v28.4s}, [%[y]], #4\n"
-//             "sub v16.16b, v16.16b, v9.16b\n"
-//             "sub v17.16b, v17.16b, v9.16b\n"
-
-//             "and v20.16b, v21.16b, v8.16b\n"
-//             "ushr v21.16b, v21.16b, #4\n"
-//             "ld1 {v23.16b}, [%[x]], #16\n"
-//             "sub v18.16b, v18.16b, v9.16b\n"
-//             "ld1 {v29.16b}, [%[y]], #16\n"
-//             "sub v19.16b, v19.16b, v9.16b\n"
-
-//             "ld1 {v25.16b}, [%[x]], #16\n"
-//             "sub v20.16b, v20.16b, v9.16b\n"
-//             "sub v21.16b, v21.16b, v9.16b\n"
-
-//             "and v22.16b, v23.16b, v8.16b\n"
-//             "ld1 {v26.4s}, [%[x]], #16\n"
-//             "and v24.16b, v25.16b, v8.16b\n"
-//             "ushr v23.16b, v23.16b, #4\n"
-//             "sub v22.16b, v22.16b, v9.16b\n"
-//             "ld1 {v27.4s}, [%[x]], #16\n"
-//             "ushr v25.16b, v25.16b, #4\n"
-//             "ld1 {v8.16b}, [%[y]], #16\n"
-//             "sub v23.16b, v23.16b, v9.16b\n"
-
-//             "fmul v26.4s, v26.4s, v28.4s\n"
-//             "uzp1 v30.16b, v29.16b, v8.16b\n"
-//             "sub v24.16b, v24.16b, v9.16b\n"
-//             "fmul v27.4s, v27.4s, v28.4s\n"
-//             "uzp2 v31.16b, v29.16b, v8.16b\n"
-//             "sub v25.16b, v25.16b, v9.16b\n"
-//             "eor v8.16b, v8.16b, v8.16b\n"
-//             "eor v9.16b, v9.16b, v9.16b\n"
-
-//             //! 0
-//             "sdot v8.4s, v10.16b, v30.16b\n"
-//             "eor v28.16b, v28.16b, v28.16b\n"
-//             "sdot v9.4s, v12.16b, v30.16b\n"
-//             "eor v29.16b, v29.16b, v29.16b\n"
-//             "sdot v28.4s, v14.16b, v30.16b\n"
-//             "sdot v29.4s, v16.16b, v30.16b\n"
-
-//             "sdot v8.4s, v11.16b, v31.16b\n"
-//             "sdot v9.4s, v13.16b, v31.16b\n"
-//             "sdot v28.4s, v15.16b, v31.16b\n"
-//             "sdot v29.4s, v17.16b, v31.16b\n"
-
-//             "scvtf v8.4s, v8.4s\n"
-//             "scvtf v9.4s, v9.4s\n"
-//             "scvtf v28.4s, v28.4s\n"
-//             "scvtf v29.4s, v29.4s\n"
-
-//             "fmla v0.4s, v8.4s, v26.s[0]\n"
-//             "fmla v1.4s, v9.4s, v26.s[1]\n"
-//             "fmla v2.4s, v28.4s, v26.s[2]\n"
-//             "fmla v3.4s, v29.4s, v26.s[3]\n"
-
-//             "eor v8.16b, v8.16b, v8.16b\n"
-//             "eor v9.16b, v9.16b, v9.16b\n"
-//             "eor v28.16b, v28.16b, v28.16b\n"
-//             "eor v29.16b, v29.16b, v29.16b\n"
-
-//             //! 4
-//             "sdot v8.4s, v18.16b, v30.16b\n"
-//             "sdot v9.4s, v20.16b, v30.16b\n"
-//             "sdot v28.4s, v22.16b, v30.16b\n"
-//             "sdot v29.4s, v24.16b, v30.16b\n"
-
-//             "sdot v8.4s, v19.16b, v31.16b\n"
-//             "sdot v9.4s, v21.16b, v31.16b\n"
-//             "subs %w[nb], %w[nb], #1\n"
-//             "sdot v28.4s, v23.16b, v31.16b\n"
-//             "sdot v29.4s, v25.16b, v31.16b\n"
-
-//             "scvtf v8.4s, v8.4s\n"
-//             "scvtf v9.4s, v9.4s\n"
-//             "scvtf v28.4s, v28.4s\n"
-//             "scvtf v29.4s, v29.4s\n"
-
-//             "fmla v4.4s, v8.4s, v27.s[0]\n"
-//             "fmla v5.4s, v9.4s, v27.s[1]\n"
-//             "fmla v6.4s, v28.4s, v27.s[2]\n"
-//             "fmla v7.4s, v29.4s, v27.s[3]\n"
-//             //! loop end
-//             "bne 1b\n"
-
-//             //! store
-//             "faddp v0.4s, v0.4s, v1.4s\n"
-//             "ld1 {v10.4s}, [%[bias_ptr]], #16\n"
-//             "faddp v2.4s, v2.4s, v3.4s\n"
-//             "faddp v4.4s, v4.4s, v5.4s\n"
-//             "ld1 {v11.4s}, [%[bias_ptr]], #16\n"
-//             "faddp v6.4s, v6.4s, v7.4s\n"
-
-//             "faddp v0.4s, v0.4s, v2.4s\n"
-//             "faddp v1.4s, v4.4s, v6.4s\n"
-//             "fadd v0.4s, v0.4s, v10.4s\n"
-//             "fadd v1.4s, v1.4s, v11.4s\n"
-
-//             "st1 {v0.4s, v1.4s}, [%[dst]]\n"
-
-//             : [x] "+r"(x), [y] "+r"(y), [dst] "+r"(dst), [bias_ptr] "+r"(bias_ptr),
-//               [nb] "+r"(nb)
-//             :
-//             : "v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9", "v10", "v11",
-//               "v12", "v13", "v14", "v15", "v16", "v17", "v18", "v19", "v20", "v21",
-//               "v22", "v23", "v24", "v25", "v26", "v27", "v28", "v29", "v30", "v31",
-//               "cc", "memory");
-// }
-
 inline void vec_vec_dot_q40_with_q80_packed_asm(
         const int n, const void* __restrict vx, const void* __restrict vy, float* dst,
         const float* bias) {
@@ -543,232 +377,206 @@ inline void vec_vec_dot_q40_with_q80_packed_asm(
             "1:\n"
             //! load constant 0x0f and 0x8
             "ld1r {v28.4s}, [%[y]], #4\n"
+            "and v14.16b, v15.16b, v8.16b\n"
+            "ushr v15.16b, v15.16b, #4\n"
+            "and v16.16b, v17.16b, v8.16b\n"
+            "ld1 {v29.16b}, [%[y]], #16\n"
+            "ushr v17.16b, v17.16b, #4\n"
             "and v10.16b, v11.16b, v8.16b\n"
             "and v12.16b, v13.16b, v8.16b\n"
-            "ld1 {v29.16b, v30.16b}, [%[y]], #32\n"
 
             "ushr v11.16b, v11.16b, #4\n"
+            "eor v22.16b, v22.16b, v22.16b\n"
+            "ld1 {v30.16b}, [%[y]], #16\n"
             "ushr v13.16b, v13.16b, #4\n"
+            "eor v23.16b, v23.16b, v23.16b\n"
 
-            "and v14.16b, v15.16b, v8.16b\n"
-            "ushr v15.16b, v15.16b, #4\n"
-
-            "sub v10.16b, v10.16b, v9.16b\n"
-            "sub v11.16b, v11.16b, v9.16b\n"
-
-            "and v16.16b, v17.16b, v8.16b\n"
-            "ushr v17.16b, v17.16b, #4\n"
-
+            "sub v15.16b, v15.16b, v9.16b\n"
+            "eor v24.16b, v24.16b, v24.16b\n"
+            "sub v17.16b, v17.16b, v9.16b\n"
             "uzp2 v31.16b, v29.16b, v30.16b\n"
+            "sub v16.16b, v16.16b, v9.16b\n"
+            "eor v25.16b, v25.16b, v25.16b\n"
+            "ld1 {v19.16b}, [%[x]], #16\n"
             "uzp1 v30.16b, v29.16b, v30.16b\n"
+            "sub v10.16b, v10.16b, v9.16b\n"
+
+            "sub v11.16b, v11.16b, v9.16b\n"
+            "ld1 {v21.16b}, [%[x]], #16\n"
+            "sdot v24.4s, v15.16b, v31.16b\n"
 
             "sub v12.16b, v12.16b, v9.16b\n"
-            "sub v13.16b, v13.16b, v9.16b\n"
-            "sub v14.16b, v14.16b, v9.16b\n"
-            "sub v15.16b, v15.16b, v9.16b\n"
-            "sub v16.16b, v16.16b, v9.16b\n"
-            "sub v17.16b, v17.16b, v9.16b\n"
-
-            "eor v22.16b, v22.16b, v22.16b\n"
-            "eor v23.16b, v23.16b, v23.16b\n"
-            "eor v24.16b, v24.16b, v24.16b\n"
-            "eor v25.16b, v25.16b, v25.16b\n"
-
-            "ld1 {v19.16b}, [%[x]], #16\n"
-            "ld1 {v21.16b}, [%[x]], #16\n"
-
-            "sdot v22.4s, v11.16b, v31.16b\n"
-            "sdot v23.4s, v13.16b, v31.16b\n"
-            "sdot v24.4s, v15.16b, v31.16b\n"
-            "sdot v25.4s, v17.16b, v31.16b\n"
-
-            "sdot v22.4s, v10.16b, v30.16b\n"
-            "sdot v23.4s, v12.16b, v30.16b\n"
-            "sdot v24.4s, v14.16b, v30.16b\n"
-            "sdot v25.4s, v16.16b, v30.16b\n"
-
             "ld1 {v15.16b}, [%[x]], #16\n"
+            "sub v13.16b, v13.16b, v9.16b\n"
+            "sdot v25.4s, v17.16b, v31.16b\n"
+            "sub v14.16b, v14.16b, v9.16b\n"
             "ld1 {v17.16b}, [%[x]], #16\n"
 
-            "scvtf v22.4s, v22.4s\n"
-            "scvtf v23.4s, v23.4s\n"
-            "scvtf v24.4s, v24.4s\n"
-            "scvtf v25.4s, v25.4s\n"
-
-            "ld1 {v26.4s}, [%[x]], #16\n"
             "and v18.16b, v19.16b, v8.16b\n"
+            "sdot v22.4s, v11.16b, v31.16b\n"
             "and v20.16b, v21.16b, v8.16b\n"
-            "and v14.16b, v15.16b, v8.16b\n"
-            "and v16.16b, v17.16b, v8.16b\n"
-
-            "ld1 {v27.4s}, [%[x]], #16\n"
+            "ld1 {v26.4s}, [%[x]], #16\n"
+            "sdot v25.4s, v16.16b, v30.16b\n"
+            "sdot v23.4s, v13.16b, v31.16b\n"
+            "sdot v24.4s, v14.16b, v30.16b\n"
             "ushr v19.16b, v19.16b, #4\n"
-            "ushr v21.16b, v21.16b, #4\n"
-            "ushr v15.16b, v15.16b, #4\n"
-            "ushr v17.16b, v17.16b, #4\n"
 
+            "sdot v22.4s, v10.16b, v30.16b\n"
+            "ld1 {v27.4s}, [%[x]], #16\n"
+            "ushr v21.16b, v21.16b, #4\n"
+            "sdot v23.4s, v12.16b, v30.16b\n"
+            "fmul v26.4s, v26.4s, v28.4s\n"
             "sub v18.16b, v18.16b, v9.16b\n"
+            "and v16.16b, v17.16b, v8.16b\n"
+            "scvtf v24.4s, v24.4s\n"
+            "ld1 {v11.16b}, [%[x]], #16\n"
+            "fmul v27.4s, v27.4s, v28.4s\n"
+            "and v14.16b, v15.16b, v8.16b\n"
+            "scvtf v25.4s, v25.4s\n"
             "sub v19.16b, v19.16b, v9.16b\n"
 
-            "fmul v26.4s, v26.4s, v28.4s\n"
-            "fmul v27.4s, v27.4s, v28.4s\n"
+            "scvtf v22.4s, v22.4s\n"
+            "ushr v15.16b, v15.16b, #4\n"
+            "scvtf v23.4s, v23.4s\n"
+            "ushr v17.16b, v17.16b, #4\n"
 
+            "eor v10.16b, v10.16b, v10.16b\n"
+            "subs %w[nb], %w[nb], #1\n"
+            "ld1 {v13.16b}, [%[x]], #16\n"
             "sub v20.16b, v20.16b, v9.16b\n"
-            "sub v21.16b, v21.16b, v9.16b\n"
-            "sub v14.16b, v14.16b, v9.16b\n"
-            "sub v15.16b, v15.16b, v9.16b\n"
-            "sub v16.16b, v16.16b, v9.16b\n"
-            "sub v17.16b, v17.16b, v9.16b\n"
-
-            "fmla v0.4s, v22.4s, v26.s[0]\n"
-            "fmla v1.4s, v23.4s, v26.s[1]\n"
-            "fmla v2.4s, v24.4s, v26.s[2]\n"
-            "fmla v3.4s, v25.4s, v26.s[3]\n"
-
-            "eor v8.16b, v8.16b, v8.16b\n"
-            "eor v9.16b, v9.16b, v9.16b\n"
             "eor v28.16b, v28.16b, v28.16b\n"
+            "sub v15.16b, v15.16b, v9.16b\n"
+            "sub v17.16b, v17.16b, v9.16b\n"
+            "fmla v2.4s, v24.4s, v26.s[2]\n"
+            "eor v12.16b, v12.16b, v12.16b\n"
+            "sdot v28.4s, v15.16b, v31.16b\n"
+            "sub v21.16b, v21.16b, v9.16b\n"
             "eor v29.16b, v29.16b, v29.16b\n"
+            "sdot v10.4s, v18.16b, v30.16b\n"
+            "ld1 {v15.16b}, [%[x]], #16\n"
+            "fmla v3.4s, v25.4s, v26.s[3]\n"
+            "sdot v12.4s, v20.16b, v30.16b\n"
+            "sub v14.16b, v14.16b, v9.16b\n"
+            "fmla v1.4s, v23.4s, v26.s[1]\n"
+            "sdot v29.4s, v17.16b, v31.16b\n"
+            "fmla v0.4s, v22.4s, v26.s[0]\n"
+            "sub v16.16b, v16.16b, v9.16b\n"
 
             //! 4
-            "sdot v8.4s, v18.16b, v30.16b\n"
-            "sdot v9.4s, v20.16b, v30.16b\n"
+            "sdot v10.4s, v19.16b, v31.16b\n"
+            "sdot v12.4s, v21.16b, v31.16b\n"
             "sdot v28.4s, v14.16b, v30.16b\n"
             "sdot v29.4s, v16.16b, v30.16b\n"
 
-            "sdot v8.4s, v19.16b, v31.16b\n"
-            "sdot v9.4s, v21.16b, v31.16b\n"
-            "subs %w[nb], %w[nb], #1\n"
-            "sdot v28.4s, v15.16b, v31.16b\n"
-            "sdot v29.4s, v17.16b, v31.16b\n"
-
-            "ld1 {v11.16b}, [%[x]], #16\n"
-            "ld1 {v13.16b}, [%[x]], #16\n"
-            "ld1 {v15.16b}, [%[x]], #16\n"
             "ld1 {v17.16b}, [%[x]], #16\n"
 
-            "scvtf v8.4s, v8.4s\n"
-            "scvtf v9.4s, v9.4s\n"
+            "scvtf v10.4s, v10.4s\n"
+            "scvtf v12.4s, v12.4s\n"
             "scvtf v28.4s, v28.4s\n"
             "scvtf v29.4s, v29.4s\n"
 
-            "fmla v4.4s, v8.4s, v27.s[0]\n"
-            "fmla v5.4s, v9.4s, v27.s[1]\n"
-            "movi v8.16b, #0x0f\n"
+            "fmla v4.4s, v10.4s, v27.s[0]\n"
+            "fmla v5.4s, v12.4s, v27.s[1]\n"
             "fmla v6.4s, v28.4s, v27.s[2]\n"
-            "movi v9.16b, #0x08\n"
             "fmla v7.4s, v29.4s, v27.s[3]\n"
             //! loop end
             "bne 1b\n"
 
             "ld1r {v28.4s}, [%[y]], #4\n"
-            "movi v8.16b, #0x0f\n"
-            "movi v9.16b, #0x08\n"
-
-            "and v10.16b, v11.16b, v8.16b\n"
-            "and v12.16b, v13.16b, v8.16b\n"
-            "ld1 {v29.16b, v30.16b}, [%[y]], #32\n"
-
-            "ushr v11.16b, v11.16b, #4\n"
-            "ushr v13.16b, v13.16b, #4\n"
-
             "and v14.16b, v15.16b, v8.16b\n"
             "ushr v15.16b, v15.16b, #4\n"
-
-            "sub v10.16b, v10.16b, v9.16b\n"
-            "sub v11.16b, v11.16b, v9.16b\n"
-
             "and v16.16b, v17.16b, v8.16b\n"
+            "ld1 {v29.16b}, [%[y]], #16\n"
             "ushr v17.16b, v17.16b, #4\n"
+            "and v10.16b, v11.16b, v8.16b\n"
+            "and v12.16b, v13.16b, v8.16b\n"
 
+            "ushr v11.16b, v11.16b, #4\n"
+            "eor v22.16b, v22.16b, v22.16b\n"
+            "ld1 {v30.16b}, [%[y]], #16\n"
+            "ushr v13.16b, v13.16b, #4\n"
+            "eor v23.16b, v23.16b, v23.16b\n"
+
+            "sub v15.16b, v15.16b, v9.16b\n"
+            "eor v24.16b, v24.16b, v24.16b\n"
+            "sub v17.16b, v17.16b, v9.16b\n"
             "uzp2 v31.16b, v29.16b, v30.16b\n"
+            "sub v16.16b, v16.16b, v9.16b\n"
+            "eor v25.16b, v25.16b, v25.16b\n"
+            "ld1 {v19.16b}, [%[x]], #16\n"
             "uzp1 v30.16b, v29.16b, v30.16b\n"
+            "sub v10.16b, v10.16b, v9.16b\n"
+
+            "sub v11.16b, v11.16b, v9.16b\n"
+            "ld1 {v21.16b}, [%[x]], #16\n"
+            "sdot v24.4s, v15.16b, v31.16b\n"
 
             "sub v12.16b, v12.16b, v9.16b\n"
-            "sub v13.16b, v13.16b, v9.16b\n"
-            "sub v14.16b, v14.16b, v9.16b\n"
-            "sub v15.16b, v15.16b, v9.16b\n"
-            "sub v16.16b, v16.16b, v9.16b\n"
-            "sub v17.16b, v17.16b, v9.16b\n"
-
-            "eor v22.16b, v22.16b, v22.16b\n"
-            "eor v23.16b, v23.16b, v23.16b\n"
-            "eor v24.16b, v24.16b, v24.16b\n"
-            "eor v25.16b, v25.16b, v25.16b\n"
-
-            "sdot v22.4s, v11.16b, v31.16b\n"
-            "sdot v23.4s, v13.16b, v31.16b\n"
-            "sdot v24.4s, v15.16b, v31.16b\n"
-            "sdot v25.4s, v17.16b, v31.16b\n"
-
-            "sdot v22.4s, v10.16b, v30.16b\n"
-            "sdot v23.4s, v12.16b, v30.16b\n"
-            "sdot v24.4s, v14.16b, v30.16b\n"
-            "sdot v25.4s, v16.16b, v30.16b\n"
-
-            "scvtf v22.4s, v22.4s\n"
-            "scvtf v23.4s, v23.4s\n"
-            "scvtf v24.4s, v24.4s\n"
-            "scvtf v25.4s, v25.4s\n"
-
-            "ld1 {v19.16b}, [%[x]], #16\n"
-            "ld1 {v21.16b}, [%[x]], #16\n"
             "ld1 {v15.16b}, [%[x]], #16\n"
+            "sub v13.16b, v13.16b, v9.16b\n"
+            "sdot v25.4s, v17.16b, v31.16b\n"
+            "sub v14.16b, v14.16b, v9.16b\n"
             "ld1 {v17.16b}, [%[x]], #16\n"
 
             "and v18.16b, v19.16b, v8.16b\n"
+            "sdot v22.4s, v11.16b, v31.16b\n"
             "and v20.16b, v21.16b, v8.16b\n"
-            "and v14.16b, v15.16b, v8.16b\n"
-            "and v16.16b, v17.16b, v8.16b\n"
-
+            "ld1 {v26.4s}, [%[x]], #16\n"
+            "sdot v25.4s, v16.16b, v30.16b\n"
+            "sdot v23.4s, v13.16b, v31.16b\n"
+            "sdot v24.4s, v14.16b, v30.16b\n"
             "ushr v19.16b, v19.16b, #4\n"
+
+            "sdot v22.4s, v10.16b, v30.16b\n"
+            "ld1 {v27.4s}, [%[x]], #16\n"
             "ushr v21.16b, v21.16b, #4\n"
+            "sdot v23.4s, v12.16b, v30.16b\n"
+            "fmul v26.4s, v26.4s, v28.4s\n"
+            "sub v18.16b, v18.16b, v9.16b\n"
+            "and v16.16b, v17.16b, v8.16b\n"
+            "scvtf v24.4s, v24.4s\n"
+            "fmul v27.4s, v27.4s, v28.4s\n"
+            "and v14.16b, v15.16b, v8.16b\n"
+            "scvtf v25.4s, v25.4s\n"
+            "sub v19.16b, v19.16b, v9.16b\n"
+
+            "scvtf v22.4s, v22.4s\n"
             "ushr v15.16b, v15.16b, #4\n"
+            "scvtf v23.4s, v23.4s\n"
             "ushr v17.16b, v17.16b, #4\n"
 
-            "sub v18.16b, v18.16b, v9.16b\n"
-            "sub v19.16b, v19.16b, v9.16b\n"
-            "ld1 {v26.4s}, [%[x]], #16\n"
-            "ld1 {v27.4s}, [%[x]], #16\n"
-
+            "eor v10.16b, v10.16b, v10.16b\n"
             "sub v20.16b, v20.16b, v9.16b\n"
-            "sub v21.16b, v21.16b, v9.16b\n"
-            "sub v14.16b, v14.16b, v9.16b\n"
-            "sub v15.16b, v15.16b, v9.16b\n"
-            "sub v16.16b, v16.16b, v9.16b\n"
-            "sub v17.16b, v17.16b, v9.16b\n"
-            "fmul v26.4s, v26.4s, v28.4s\n"
-            "fmul v27.4s, v27.4s, v28.4s\n"
-
-            "fmla v0.4s, v22.4s, v26.s[0]\n"
-            "fmla v1.4s, v23.4s, v26.s[1]\n"
-            "fmla v2.4s, v24.4s, v26.s[2]\n"
-            "fmla v3.4s, v25.4s, v26.s[3]\n"
-
-            "eor v8.16b, v8.16b, v8.16b\n"
-            "eor v9.16b, v9.16b, v9.16b\n"
             "eor v28.16b, v28.16b, v28.16b\n"
+            "sub v15.16b, v15.16b, v9.16b\n"
+            "sub v17.16b, v17.16b, v9.16b\n"
+            "fmla v2.4s, v24.4s, v26.s[2]\n"
+            "eor v12.16b, v12.16b, v12.16b\n"
+            "sdot v28.4s, v15.16b, v31.16b\n"
+            "sub v21.16b, v21.16b, v9.16b\n"
             "eor v29.16b, v29.16b, v29.16b\n"
+            "sdot v10.4s, v18.16b, v30.16b\n"
+            "fmla v3.4s, v25.4s, v26.s[3]\n"
+            "sdot v12.4s, v20.16b, v30.16b\n"
+            "sub v14.16b, v14.16b, v9.16b\n"
+            "fmla v1.4s, v23.4s, v26.s[1]\n"
+            "sdot v29.4s, v17.16b, v31.16b\n"
+            "fmla v0.4s, v22.4s, v26.s[0]\n"
+            "sub v16.16b, v16.16b, v9.16b\n"
 
             //! 4
-            "sdot v8.4s, v18.16b, v30.16b\n"
-            "sdot v9.4s, v20.16b, v30.16b\n"
+            "sdot v10.4s, v19.16b, v31.16b\n"
+            "sdot v12.4s, v21.16b, v31.16b\n"
             "sdot v28.4s, v14.16b, v30.16b\n"
             "sdot v29.4s, v16.16b, v30.16b\n"
 
-            "sdot v8.4s, v19.16b, v31.16b\n"
-            "sdot v9.4s, v21.16b, v31.16b\n"
-            "subs %w[nb], %w[nb], #1\n"
-            "sdot v28.4s, v15.16b, v31.16b\n"
-            "sdot v29.4s, v17.16b, v31.16b\n"
-
-            "scvtf v8.4s, v8.4s\n"
-            "scvtf v9.4s, v9.4s\n"
+            "scvtf v10.4s, v10.4s\n"
+            "scvtf v12.4s, v12.4s\n"
             "scvtf v28.4s, v28.4s\n"
             "scvtf v29.4s, v29.4s\n"
 
-            "fmla v4.4s, v8.4s, v27.s[0]\n"
-            "fmla v5.4s, v9.4s, v27.s[1]\n"
+            "fmla v4.4s, v10.4s, v27.s[0]\n"
+            "fmla v5.4s, v12.4s, v27.s[1]\n"
             "fmla v6.4s, v28.4s, v27.s[2]\n"
             "fmla v7.4s, v29.4s, v27.s[3]\n"
 
@@ -795,6 +603,7 @@ inline void vec_vec_dot_q40_with_q80_packed_asm(
               "v22", "v23", "v24", "v25", "v26", "v27", "v28", "v29", "v30", "v31",
               "cc", "memory");
 }
+#endif
 
 }  // namespace opt
 }  // namespace inferllm
