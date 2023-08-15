@@ -20,20 +20,28 @@ ThreadPool::ThreadPool(uint32_t threads_num)
                 while (!m_stop) {
                     while (m_active) {
                         //! if the thread should work
-                        if (m_workers[i]->work_flag) {
-                            // printf("thread %d work form %d to %d\n", i,
-                            //        i * m_task_per_thread,
-                            //        (i + 1) * m_task_per_thread);
+                        if (m_workers[i]->work_flag.load(std::memory_order_acquire)) {
                             m_task(TaskId{
                                     i * m_task_per_thread,
                                     std::min((i + 1) * m_task_per_thread, m_nr_task),
                                     i});
-                            // printf("thread %d finished\n", i);
                             //! Flag worker is finished
-                            m_workers[i]->work_flag = false;
+                            m_workers[i]->work_flag.store(
+                                    false, std::memory_order_release);
                         }
                         //! Wait next task coming
-                        //std::this_thread::yield();
+                        for (int it = 0; it < WORKER_ACTIVE_WAIT; it++) {
+                            if (m_workers[i]->work_flag.load(
+                                        std::memory_order_acquire)) {
+                                break;
+                            }
+                            if (it < ACTIVE_WAIT_PAUSE_LIMIT || (it & 1)) {
+                                INFER_PAUSE(16);  // Spin lock's CPU-level yield
+                            } else {
+                                // Spin lock's OS-level yield
+                                std::this_thread::yield();
+                            }
+                        }
                     }
                     {
                         std::unique_lock<std::mutex> lock(m_mutex);
@@ -53,12 +61,13 @@ void ThreadPool::add_task(const MultiThreadingTask& task, uint32_t nr_task) {
         return;
     } else {
         active();
+        INFER_ASSERT(m_active, "thread pool is not actived.");
         m_nr_task = nr_task;
         //! Set the task number, task iter and task
         m_task_per_thread = (nr_task + m_nr_threads - 1) / m_nr_threads;
         m_task = std::move(task);
         for (uint32_t i = 0; i < m_nr_threads - 1; i++) {
-            m_workers[i]->work_flag = true;
+            m_workers[i]->work_flag.store(true, std::memory_order_release);
         }
         //! Main thread working
         uint32_t start = (m_nr_threads - 1) * m_task_per_thread;
@@ -71,17 +80,29 @@ void ThreadPool::add_task(const MultiThreadingTask& task, uint32_t nr_task) {
 
 inline void ThreadPool::sync() {
     bool no_finished = false;
+    uint32_t no_finished_id = 0;
     do {
         no_finished = false;
-        for (uint32_t i = 0; i < m_nr_threads - 1; ++i) {
-            if (m_workers[i]->work_flag) {
+        for (uint32_t i = no_finished_id; i < m_nr_threads - 1; ++i) {
+            if (m_workers[i]->work_flag.load(std::memory_order_acquire)) {
                 no_finished = true;
+                no_finished_id = i;
                 break;
             }
         }
-        // if (no_finished) {
-        //     std::this_thread::yield();
-        // }
+        if (no_finished) {
+            for (int it = 0; it < MAIN_THREAD_ACTIVE_WAIT; it++) {
+                if (!m_workers[no_finished_id]->work_flag.load(
+                            std::memory_order_acquire)) {
+                    break;
+                }
+                if ((it < ACTIVE_WAIT_PAUSE_LIMIT || (it & 1))) {
+                    INFER_PAUSE(16);
+                } else {
+                    std::this_thread::yield();
+                }
+            }
+        }
     } while (no_finished);
 }
 inline void ThreadPool::active() {
