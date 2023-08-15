@@ -25,7 +25,7 @@ enum class KernelID {
     RmsNormFloat,
     SoftmaxFloat,
     MatmulInt4Float,
-    MatmulInt4FloatPacked,
+    MatmulInt4FloatPacked, // 10
     MatmulInt8Float,
     MatmulFloatFloat,
     MatmulWithHeadStrideFloat,

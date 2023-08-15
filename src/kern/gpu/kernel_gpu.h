@@ -52,6 +52,11 @@ void llm_softmax_compute_float(
 void llm_matmul_compute_int4_float(
         float* dst, const void* src0, const float* bias, const float* src1, uint32_t M,
         uint32_t N, uint32_t K, void* workspace, uint32_t size, cudaHandle* handle);
+
+void llm_matmul_compute_int4_float_packed(
+        float* dst, const void* src0, const float* bias, const float* src1, uint32_t M,
+        uint32_t N, uint32_t K, void* workspace, uint32_t size, cudaHandle* handle);
+
 void llm_matmul_compute_float_float(
         float* dst, const float* src0, const float* bias, const float* src1, uint32_t M,
         uint32_t N, uint32_t K, void* workspace, uint32_t size, cudaHandle* handle);
@@ -102,9 +107,6 @@ void llm_head_batched_matmul_compute_float(
         float* dst, const float* v, const float* qk, uint32_t seqlen, uint32_t embd,
         uint32_t head, uint32_t nr_past, cudaHandle* handle);
 
-void llm_int4_matmul_weight_reorder(
-        size_t M, size_t N, void* dst, void* src, size_t PACK_SIZE);
-
 template <KernelID Id, typename... Args>
 struct Comp {
     static void exec(Args... args, cudaHandle* handle);
@@ -141,6 +143,14 @@ struct Space {
         }                                            \
     };
 
+#define NOImplementKernel(kernel_id)                         \
+    template <typename... Args>                              \
+    struct Comp<KernelID::kernel_id, Args...> {              \
+        static void exec(Args... args, cudaHandle* handle) { \
+            INFER_ASSERT(0, "kernel not implement");         \
+        }                                                    \
+    };
+
 namespace inferllm {
 namespace gpu {
 PartialImplementKernel(ElemwiseFloat, llm_elemwise_compute_float);
@@ -170,13 +180,18 @@ PartialImplementKernel(
         llm_matmul_compute_with_head_strideq_broadcastk_float);
 PartialImplementKernel(
         HeadBatchedMatmulBroadCastVFloat, llm_head_batched_matmul_broadcastv_float);
-PartialImplementKernel(MatmulInt4WeightReorder, llm_int4_matmul_weight_reorder);
 
 PartialImplementSpace(MatmulInt4Float, llm_matmul_get_workspace_float);
 PartialImplementSpace(MatmulFloatFloat, llm_matmul_get_workspace_float_float);
 
+NOImplementKernel(MatmulInt4FloatPacked);
+NOImplementKernel(MatmulInt4WeightReorder);
+NOImplementKernel(MatmulInt8Float);
+NOImplementKernel(EmbeddingGetInt8Float);
+
 #undef PartialImplementKernel
 #undef PartialImplementSpace
+#undef NOImplementKernel
 
 }  // namespace gpu
 }  // namespace inferllm
