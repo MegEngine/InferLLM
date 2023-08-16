@@ -11,9 +11,14 @@ InferLLM is a lightweight LLM model inference framework that mainly references a
 
 In short, InferLLM is a simple and efficient LLM CPU inference framework that can deploy quantized models in LLM locally and has good inference speed.
 
+## Latest News
+- 2023.08.16: Add support for LLama-2-7B model.
+- 2023.08.8: Optimized the performance on Arm, which optimized the int4 matmul kernel with arm asm and kernel packing.
+- berfor: support chatglm/chatglm2, baichuan, alpaca, ggml-llama model.
+
 ## How to use
 ### Download model
-Currently, InferLLM uses the same models as llama.cpp and can download models from the llama.cpp project. In addition, models can also be downloaded directly from Hugging Face [kewin4933/InferLLM-Model](https://huggingface.co/kewin4933/InferLLM-Model/tree/main). Currently, two alpaca models are uploaded in this project, one is the Chinese int4 model and the other is the English int4 model.
+Currently, InferLLM uses the same models as llama.cpp and can download models from the llama.cpp project. In addition, models can also be downloaded directly from Hugging Face [kewin4933/InferLLM-Model](https://huggingface.co/kewin4933/InferLLM-Model/tree/main). Currently, two alpaca, llama2, chatglm/chatglm2 and baichuan models are uploaded in this project, one is the Chinese int4 model and the other is the English int4 model.
 
 ### Compile InferLLM
 #### Local compilation
@@ -52,6 +57,7 @@ Now InferLLM supports the fellowing models:
 * [ChatGLM2-6B](https://github.com/THUDM/ChatGLM2-6B): usage please refer to [ChatGLM](./application/chatglm/Readme.md)
 * [ChatGLM-6B](https://github.com/THUDM/ChatGLM-6B): usage please refer to [ChatGLM](./application/chatglm/Readme.md)
 * [llama](https://github.com/facebookresearch/llama)
+* [llama2](https://huggingface.co/meta-llama/Llama-2-7b-chat-hf)
 * [alpaca](https://crfm.stanford.edu/2023/03/13/alpaca.html)
 * [baichuan](https://github.com/baichuan-inc/baichuan-7B) : usage please refer to [baichuan](./application/baichuan/Readme.md)
 ### License

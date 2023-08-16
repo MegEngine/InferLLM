@@ -1,8 +1,9 @@
-#include "baichuan.h"
+#include "llama_like.h"
+#include "chatGLM.h"
 
 using namespace inferllm;
 
-void BaiChuanGraph::set_weights_alias() {
+void LlamaLikeGraph::set_weights_alias() {
     m_weights_name_aliases.clear();
     // clang-format off
     m_weights_name_aliases = {
@@ -22,7 +23,7 @@ void BaiChuanGraph::set_weights_alias() {
     // clang-format on
 }
 
-void BaiChuanGraph::load_param(
+void LlamaLikeGraph::load_param(
         std::shared_ptr<InputFile> fin, LlmParams& param,
         std::shared_ptr<Vocab> vocab) {
     Header header;
@@ -50,7 +51,7 @@ void BaiChuanGraph::load_param(
     fin->seek(header.tensor_offset);
 }
 
-void BaiChuanGraph::construct_llm() {
+void LlamaLikeGraph::construct_llm() {
     uint32_t embd = m_param.n_embd;
     uint32_t ffn_size = m_param.n_mult;
     uint32_t head = m_param.n_head;

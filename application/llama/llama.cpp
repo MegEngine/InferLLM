@@ -30,13 +30,14 @@ struct app_params {
     float temp = 0.10f;
     float repeat_penalty = 1.30f;
 
-    std::string model = "/home/supercb/mycode/mlsys/InferLLM/chinese-alpaca-7b-q4.bin";  // model path
+    std::string model = "chinese-alpaca-7b-q4.bin";  // model path
 
     bool use_color = true;          // use color to distinguish generations and inputs
     bool use_mmap = false;          // use mmap to load model
     std::string dtype = "float32";  // configure the compute dtype
     std::string device = "CPU";      // configure the compute device type
     std::string mtype = "llama";    // the model type name, llama
+    int32_t version = 1;            // the model version
 };
 
 void app_print_usage(int argc, char** argv, const app_params& params) {
@@ -80,9 +81,7 @@ void app_print_usage(int argc, char** argv, const app_params& params) {
     fprintf(stderr,
             "  -g type               configure the compute device type, default CPU, "
             "can be CPU and GPU now.\n");
-    fprintf(stderr,
-            "  --model_type type     the model type name, default llama, can only be "
-            "llama now.\n");
+    fprintf(stderr, "  --version N           the llama model version, default 1.\n");
     fprintf(stderr, "\n");
 }
 
@@ -113,7 +112,9 @@ bool app_params_parse(int argc, char** argv, app_params& params) {
             params.model = argv[++i];
         } else if (arg == "--color") {
             params.use_color = true;
-        } else if (arg == "--mmap") {
+        } else if (arg == "--version" || arg == "-v") {
+            params.version = std::stoi(argv[++i]);
+        }else if (arg == "--mmap") {
             params.use_mmap = true;
         } else if (arg == "-h" || arg == "--help") {
             app_print_usage(argc, argv, params);
@@ -159,6 +160,12 @@ int main(int argc, char** argv) {
     config.nr_thread = params.n_threads;
     config.enable_mmap = params.use_mmap;
     config.nr_ctx = params.n_ctx;
+
+    if(params.version == 1){
+        params.mtype = "llama";
+    } else if (params.version == 2){
+        params.mtype = "llama2";
+    }
 
     std::shared_ptr<inferllm::Model> model =
             std::make_shared<inferllm::Model>(config, params.mtype);

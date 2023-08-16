@@ -30,7 +30,7 @@ export NDK_ROOT=/path/to/ndk
 ./tools/android_build.sh
 ```
 ### 运行 InferLLM
-如果是本执行直接执行 `./alpaca -m chinese-alpaca-7b-q4.bin -t 4`，如果要在手机上执行，可以使用 adb 命令把 alpaca 和模型文件拷贝到手机上，然后执行 `adb shell ./alpaca -m chinese-alpaca-7b-q4.bin -t 4`。下面是运行时的截屏，
+如果是本执行直接执行 `./llama -m chinese-alpaca-7b-q4.bin -t 4`，如果要在手机上执行，可以使用 adb 命令把 llama 和模型文件拷贝到手机上，然后执行 `adb shell ./llama -m chinese-alpaca-7b-q4.bin -t 4`。下面是运行时的截屏，
 - x86 芯片是：Intel(R) Xeon(R) CPU E5-2620 v4 @ 2.10GHz
 ![x86执行](./assets/x86.gif)
 - 手机是 xiaomi9，Qualcomm SM8150 Snapdragon 855
@@ -40,7 +40,7 @@ export NDK_ROOT=/path/to/ndk
 
 根据 [x86测速结果](./docs/profile.md)，我们推荐使用 4 线程。
 
-默认使用的设备是 CPU，如果要使用 GPU 推理，请使用 `./alpaca -m chinese-alpaca-7b-q4.bin -g GPU` 指定 GPU 设备。
+默认使用的设备是 CPU，如果要使用 GPU 推理，请使用 `./llama -m chinese-alpaca-7b-q4.bin -g GPU` 指定 GPU 设备。
 
 ### License
 InferLLM is licensed under the Apache License, Version 2.0

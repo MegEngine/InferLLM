@@ -1,8 +1,8 @@
-#include "llama.h"
+#include "ggml_llama.h"
 #include <iostream>
 using namespace inferllm;
 
-void LlamaGraph::set_weights_alias() {
+void GgmlLlamaGraph::set_weights_alias() {
     m_weights_name_aliases.clear();
     m_weights_name_aliases = {
             {"norm.weight", "head.norm.weight"},
@@ -16,7 +16,7 @@ void LlamaGraph::set_weights_alias() {
 }
 
 //! LlamaGraph
-void LlamaGraph::load(
+void GgmlLlamaGraph::load(
         std::shared_ptr<InputFile> fin, LlmParams& param,
         std::shared_ptr<Vocab> vocab) {
     // verify the magic number wrote when model convert
@@ -119,7 +119,7 @@ void LlamaGraph::load(
     INFER_LOG("total weight length = %lu\n", weight_length);
 }
 
-void LlamaGraph::construct_llm() {
+void GgmlLlamaGraph::construct_llm() {
     uint32_t embd = m_param.n_embd;
     uint32_t mult = m_param.n_mult;
     uint32_t head = m_param.n_head;

@@ -1,11 +1,10 @@
 #pragma once
 
-#include "llama.h"
-#include "chatGLM.h"
+#include "core/graph.h"
 
 namespace inferllm {
 
-class BaiChuanGraph : public Graph {
+class LlamaLikeGraph : public Graph {
     using Graph::Graph;
 
 public:

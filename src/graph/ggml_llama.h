@@ -14,7 +14,7 @@ enum class LlamaModelType {
     LLAMA_FILE_VERSION_GGJT_V1
 };
 
-class LlamaGraph : public Graph {
+class GgmlLlamaGraph : public Graph {
     using Graph::Graph;
 
 public:
