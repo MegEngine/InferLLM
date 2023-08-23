@@ -70,6 +70,10 @@ static inline float compute_fp16_to_fp32(fp16_t h) {
 #define COMPUTE_FP16_TO_FP32(x) (table_f32_f16[x])
 #endif
 
+static const float ftype_size[] = {
+        4, 2, .5, .5, 1, 1,
+};
+
 struct Header {
     int param_offset;
     int param_length;
@@ -87,10 +91,30 @@ struct Param {
 };
 
 int main(int argc, char** argv) {
-    if (argc < 3) {
-        printf("Usage: %s <input model> <output model>\n", argv[0]);
+    int qftype = 2;
+    std::string inp_model, out_model;
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+        if (arg == "-q") {
+            std::string s = argv[++i];
+            if (s == "4") {
+                qftype = 2;
+            } else if (s == "8") {
+                qftype = 4;
+            } else if (s == "32") {
+                qftype = 0;
+            }
+        } else if (inp_model == "") {
+            inp_model = argv[i];
+        } else {
+            out_model = argv[i];
+        }
+    }
+    if (inp_model == "" || out_model == "") {
+        printf("Usage: %s [-q 4/8/32] <input model> <output model>\n", argv[0]);
         return 1;
     }
+
     // init the fp16 lookup table
     fp16_t ii;
     for (int i = 0; i < (1 << 16); ++i) {
@@ -98,9 +122,6 @@ int main(int argc, char** argv) {
         memcpy(&ii, &ui, sizeof(ii));
         const float f = table_f32_f16[i] = COMPUTE_FP16_TO_FP32(ii);
     }
-
-    const std::string inp_model = argv[1];
-    const std::string out_model = argv[2];
 
     printf("%s: loading model from '%s'\n", __func__, inp_model.c_str());
 
@@ -147,7 +168,7 @@ int main(int argc, char** argv) {
 
     // load weights
     {
-        size_t total_size_org = 0;
+        size_t total_size_old = 0;
         size_t total_size_new = 0;
 
         std::vector<float> work;
@@ -177,22 +198,12 @@ int main(int argc, char** argv) {
 
             std::string name(length, 0);
             finp.read(&name[0], length);
-            {
-                static const char* ftype_str[] = {
-                        "f32",
-                        "f16",
-                        "q4_0",
-                        "q4_1",
-                };
-                printf("%s, shape=[%d, %d], type = %s ", name.data(), ne[0], ne[1],
-                       ftype_str[ftype]);
-            }
 
             // regexes of tensor names to be quantized
+            bool quantize = false;
             const std::vector<std::string> k_names = {
                     ".*weight",
             };
-            bool quantize = false;
             for (const auto& s : k_names) {
                 if (std::regex_match(name, std::regex(s))) {
                     quantize = true;
@@ -201,82 +212,102 @@ int main(int argc, char** argv) {
             }
             // quantize only 2D tensors
             quantize &= (n_dims == 2);
-            //! read tensor data
-            if (quantize) {
-                if (ftype != 0 && ftype != 1) {
-                    fprintf(stderr,
-                            "%s: unsupported ftype %d for integer "
-                            "quantization\n",
-                            __func__, ftype);
-                    return 1;
-                }
-                if (ftype == 1) {
-                    data_f16.resize(nelements);
-                    finp.read(
-                            reinterpret_cast<char*>(data_f16.data()),
-                            nelements * sizeof(fp16_t));
-                    data_f32.resize(nelements);
-                    for (int i = 0; i < nelements; ++i) {
-                        data_f32[i] = COMPUTE_FP16_TO_FP32(data_f16[i]);
-                    }
-                } else {
-                    data_f32.resize(nelements);
-                    finp.read(
-                            reinterpret_cast<char*>(data_f32.data()),
-                            nelements * sizeof(float));
-                }
-                ftype = 2;  // quantized to int4
-            } else {
-                const int bpe = (ftype == 0) ? sizeof(float) : sizeof(uint16_t);
-                data_u8.resize(nelements * bpe);
-                finp.read(reinterpret_cast<char*>(data_u8.data()), nelements * bpe);
-                // if fp16 convert to fp32
-                if (ftype == 1) {
-                    data_f32.resize(nelements);
-                    fp16_t* fp16_data = (fp16_t*)(data_u8.data());
-                    for (int i = 0; i < nelements; i++) {
-                        data_f32[i] = COMPUTE_FP16_TO_FP32(fp16_data[i]);
-                    }
-                    data_u8.resize(nelements * sizeof(float));
-                    memcpy(data_u8.data(), data_f32.data(), nelements * sizeof(float));
-                }
-                ftype = 0;  // convert to fp32
+            auto out_ftype = quantize ? qftype : ftype;
+
+            {
+                static const char* ftype_str[] = {
+                        "f32", "f16", "q4_0", "q4_1", "q8_0", "q8_1",
+                };
+                printf("%s, shape=[%d, %d], type = [%s -> %s]", name.data(), ne[0],
+                       ne[1], ftype_str[ftype], ftype_str[out_ftype]);
             }
+
+            //! read tensor data
+            auto old_size = 0;
+            if (ftype == 1) {
+                data_f16.resize(nelements);
+                finp.read(
+                        reinterpret_cast<char*>(data_f16.data()),
+                        nelements * sizeof(fp16_t));
+                old_size = nelements * sizeof(fp16_t);
+                data_f32.resize(nelements);
+                for (int i = 0; i < nelements; ++i) {
+                    data_f32[i] = COMPUTE_FP16_TO_FP32(data_f16[i]);
+                }
+            } else if (ftype == 2) {
+                data_u8.resize(nelements / QK40 * sizeof(BlockQ40));
+                old_size = nelements / QK40 * sizeof(BlockQ40);
+                finp.read(
+                        reinterpret_cast<char*>(data_u8.data()),
+                        nelements / QK40 * sizeof(BlockQ40));
+                data_f32.resize(nelements);
+                naive::dequantize_row_q4_0_reference(
+                        data_u8.data(), data_f32.data(), nelements);
+            } else if (ftype == 4) {
+                data_u8.resize(nelements / QK80 * sizeof(BlockQ80));
+                old_size = nelements / QK80 * sizeof(BlockQ80);
+                finp.read(
+                        reinterpret_cast<char*>(data_u8.data()),
+                        nelements / QK80 * sizeof(BlockQ80));
+                data_f32.resize(nelements);
+                naive::dequantize_row_q8_0_reference(
+                        data_u8.data(), data_f32.data(), nelements);
+            } else if (ftype == 0) {
+                data_f32.resize(nelements);
+                old_size = nelements * sizeof(float);
+                finp.read(
+                        reinterpret_cast<char*>(data_f32.data()),
+                        nelements * sizeof(float));
+            } else {
+                fprintf(stderr, "%s: unsupported ftype %d for parsing\n", __func__,
+                        ftype);
+                return 1;
+            }
+
             // write tensor header
             fout.write(reinterpret_cast<char*>(&n_dims), sizeof(n_dims));
             fout.write(reinterpret_cast<char*>(&length), sizeof(length));
-            fout.write(reinterpret_cast<char*>(&ftype), sizeof(ftype));
+            fout.write(reinterpret_cast<char*>(&out_ftype), sizeof(out_ftype));
             for (int i = 0; i < n_dims; ++i) {
                 fout.write(reinterpret_cast<char*>(&ne[i]), sizeof(ne[i]));
             }
             fout.write(&name[0], length);
 
             // quantize tensor data
-            if (quantize) {
-                work.resize(nelements);  // for quantization
-
-                size_t cur_size = inferllm::naive::quantize_row_q4_0_reference(
+            size_t new_size;
+            if (out_ftype == 2) {
+                new_size = nelements / QK40 * sizeof(BlockQ40);
+                work.resize(new_size);
+                inferllm::naive::quantize_row_q4_0_reference(
                         data_f32.data(), (inferllm::BlockQ40*)work.data(), nelements);
-
-                fout.write(reinterpret_cast<char*>(work.data()), cur_size);
-                total_size_new += cur_size;
-
-                printf("quantized length = %zu\n", cur_size);
-                printf("quantized from size = %f MB to %f MB \n",
-                       nelements * sizeof(fp16_t) / 1024.0 / 1024.0,
-                       cur_size / 1024.0 / 1024.0);
+                fout.write(reinterpret_cast<char*>(work.data()), new_size);
+            } else if (out_ftype == 4) {
+                new_size = nelements / QK80 * sizeof(BlockQ80);
+                work.resize(new_size);
+                inferllm::naive::quantize_row_q8_0_reference(
+                        data_f32.data(), (inferllm::BlockQ80*)work.data(), nelements);
+                fout.write(reinterpret_cast<char*>(work.data()), new_size);
+            } else if (out_ftype == 0) {
+                new_size = nelements * sizeof(float);
+                fout.write(
+                        reinterpret_cast<char*>(data_f32.data()),
+                        data_f32.size() * sizeof(float));
             } else {
-                printf("not quantized size = %f MB\n",
-                       data_u8.size() / 1024.0 / 1024.0);
-                fout.write(reinterpret_cast<char*>(data_u8.data()), data_u8.size());
-                total_size_new += data_u8.size();
+                fprintf(stderr, "%s: unsupported out ftype %d\n", __func__, out_ftype);
+                return 1;
             }
 
-            total_size_org += nelements * sizeof(fp16_t);
+            printf(", tensor size = %f MB", old_size / 1024.0 / 1024.0);
+            if (ftype != out_ftype)
+                printf(", quantized to %f MB", new_size / 1024.0 / 1024.0);
+
+            printf("\n");
+            total_size_old += old_size;
+            total_size_new += new_size;
         }
 
         printf("%s: model size  = %8.2f MB\n", __func__,
-               total_size_org / 1024.0 / 1024.0);
+               total_size_old / 1024.0 / 1024.0);
         printf("%s: quant size  = %8.2f MB\n", __func__,
                total_size_new / 1024.0 / 1024.0);
     }
