@@ -743,6 +743,7 @@ void Glm2MultiQueryAttention::execute(WorkSpace* workspace, uint32_t nr_past) {
                             p_outv, p_wv, p_bv, pdata, seqlen, kv_length, embd, p_work,
                             size);
                 }
+                break;
             case DType::Int8:
                 kernel->operator()<KernelID::MatmulInt8Float>(
                         p_outq, p_wq, p_bq, pdata, seqlen, embd, embd, p_work, size);
