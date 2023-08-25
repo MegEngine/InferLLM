@@ -110,7 +110,7 @@ private:
 class GPUDevice : public Device {
 public:
     GPUDevice(int device) : Device() {
-        CUDA_CHECK(cudaSetDevice(1));
+        CUDA_CHECK(cudaSetDevice(0));
         CUDA_CHECK(cudaStreamCreate(&(m_handle.stream)));
         CUBLAS_CHECK(cublasCreate(&(m_handle.cublas_handle)));
         m_kernel = make_unique<Kernel>(KernelType::GPU);
