@@ -53,7 +53,7 @@ The default device is CPU, if you want to inference with GPU, please use `./chat
 According to [x86 profiling result](./docs/profile.md), we strongly advise using 4 threads.
 
 ### Supported model
-Now InferLLM supports the fellowing models:
+Now InferLLM supports the following models:
 * [ChatGLM2-6B](https://github.com/THUDM/ChatGLM2-6B): usage please refer to [ChatGLM](./application/chatglm/Readme.md)
 * [ChatGLM-6B](https://github.com/THUDM/ChatGLM-6B): usage please refer to [ChatGLM](./application/chatglm/Readme.md)
 * [llama](https://github.com/facebookresearch/llama)
