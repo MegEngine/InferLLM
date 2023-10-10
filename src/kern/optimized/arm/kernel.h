@@ -50,7 +50,6 @@ PartialImplementKernel(
 PartialImplementKernel(RmsNormFloat, llm_rms_norm_compute_float);
 PartialImplementKernel(EmbeddingGetInt4Float, llm_embedding_get_int4_float);
 PartialImplementKernel(MatmulInt4Float, llm_matmul_compute_int4_float);
-PartialImplementKernel(MatmulInt4FloatPacked, llm_matmul_compute_int4_float_packed);
 PartialImplementKernel(
         MatmulWithHeadStrideFloat, llm_matmul_compute_with_head_stride_float);
 PartialImplementKernel(HeadBatchedMatmulFloat, llm_head_batched_matmul_compute_float);
