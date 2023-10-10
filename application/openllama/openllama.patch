@@ -1,0 +1,142 @@
+diff --git a/convert.py b/convert.py
+index 8f4f039..ab5047b 100644
+--- a/convert.py
++++ b/convert.py
+@@ -144,12 +144,22 @@ class Params:
+     def guessed(model: 'LazyModel', file_type: GGMLFileType) -> 'Params':
+         n_vocab, n_embd = model["tok_embeddings.weight"].shape
+ 
++        n_mult = 256
++        n_head = n_embd // 128
++        n_layer = next(i for i in itertools.count() if f"layers.{i}.attention.wq.weight" not in model)
++
++        # TODO: hack for open_llama_3b
++        if n_embd == 3200:
++            n_mult = 216
++            n_head = 32
++            n_layer = 26
++
+         return Params(
+             n_vocab=n_vocab,
+             n_embd=n_embd,
+-            n_mult=256,
+-            n_head=n_embd // 128,
+-            n_layer=next(i for i in itertools.count() if f"layers.{i}.attention.wq.weight" not in model),
++            n_mult=n_mult,
++            n_head=n_head,
++            n_layer=n_layer,
+             file_type=file_type,
+         )
+ 
+@@ -598,7 +608,9 @@ def convert_transformers_to_orig(model: LazyModel) -> LazyModel:
+     out["norm.weight"] = model["model.norm.weight"]
+     out["output.weight"] = model["lm_head.weight"]
+ 
+-    n_head = model["model.layers.0.self_attn.q_proj.weight"].shape[1] // 128
++    # TODO: hack for open_llama_3b
++    n_embd = model["model.layers.0.self_attn.q_proj.weight"].shape[1]
++    n_head = 32 if n_embd == 3200 else n_embd // 128
+     for i in itertools.count():
+         if f"model.layers.{i}.self_attn.q_proj.weight" not in model:
+             break
+diff --git a/ggml.c b/ggml.c
+index 4e309df..43947cf 100644
+--- a/ggml.c
++++ b/ggml.c
+@@ -187,6 +187,13 @@ typedef double ggml_float;
+ #include <intrin.h>
+ #else
+ #include <immintrin.h>
++#if (defined(__GNUC__) && __GNUC__ >= 8) || defined(__INTEL_COMPILER)
++#define MM256_SET_M128I(a, b) _mm256_set_m128i((a), (b))
++#define MM256_SET_M128(a, b) _mm256_set_m128((a), (b))
++#else
++#define MM256_SET_M128I(a, b) _mm256_insertf128_si256(_mm256_castsi128_si256(b), (a), 1)
++#define MM256_SET_M128(a, b) _mm256_insertf128_ps(_mm256_castps128_ps256(b), (a), 1)
++#endif
+ #endif
+ #endif
+ #endif
+@@ -2985,7 +2992,7 @@ static void ggml_vec_dot_q4_0_q8_0(const int n, float * restrict s, const void *
+         }
+ 
+         // Convert int32_t to float
+-        __m256 p = _mm256_cvtepi32_ps( _mm256_set_m128i( i32[0], i32[1] ));
++        __m256 p = _mm256_cvtepi32_ps( MM256_SET_M128I( i32[0], i32[1] ));
+         // Apply the scale, and accumulate
+         acc = _mm256_add_ps(_mm256_mul_ps( d, p ), acc);
+     }
+@@ -3250,11 +3257,11 @@ static void ggml_vec_dot_q4_2_q8_0(const int n, float * restrict s, const void *
+         /* Compute combined scale for the block */
+         const __m128 d0 = _mm_set1_ps(GGML_FP16_TO_FP32(x[2*i + 0].d));
+         const __m128 d1 = _mm_set1_ps(GGML_FP16_TO_FP32(x[2*i + 1].d));
+-        const __m256 d = _mm256_mul_ps(_mm256_set_m128(d1, d0), _mm256_broadcast_ss(&y[i].d));
++        const __m256 d = _mm256_mul_ps(MM256_SET_M128(d1, d0), _mm256_broadcast_ss(&y[i].d));
+ 
+         __m128i bx0 = bytes_from_nibbles_16(x[2*i + 0].qs);
+         __m128i bx1 = bytes_from_nibbles_16(x[2*i + 1].qs);
+-        __m256i bx = _mm256_set_m128i(bx1, bx0);
++        __m256i bx = MM256_SET_M128I(bx1, bx0);
+ 
+         // Now we have a vector with bytes in [ 0 .. 15 ] interval. Offset them into [ -8 .. +7 ] interval.
+         const __m256i off = _mm256_set1_epi8(8);
+diff --git a/llama.cpp b/llama.cpp
+index 4bba93a..c3ed784 100644
+--- a/llama.cpp
++++ b/llama.cpp
+@@ -36,6 +36,7 @@
+ // available llama models
+ enum e_model {
+     MODEL_UNKNOWN,
++    MODEL_3B,
+     MODEL_7B,
+     MODEL_13B,
+     MODEL_30B,
+@@ -51,6 +52,7 @@ static const size_t MB = 1024*1024;
+ static const std::map<e_model, size_t> & MEM_REQ_SCRATCH0()
+ {
+     static std::map<e_model, size_t> _MEM_REQ_SCRATCH0 = {
++        { MODEL_3B,    128ull * MB },
+         { MODEL_7B,    512ull * MB },
+         { MODEL_13B,   512ull * MB },
+         { MODEL_30B,   512ull * MB },
+@@ -62,6 +64,7 @@ static const std::map<e_model, size_t> & MEM_REQ_SCRATCH0()
+ static const std::map<e_model, size_t> & MEM_REQ_SCRATCH1()
+ {
+     static std::map<e_model, size_t> _MEM_REQ_SCRATCH1 = {
++        { MODEL_3B,    128ull * MB },
+         { MODEL_7B,    512ull * MB },
+         { MODEL_13B,   512ull * MB },
+         { MODEL_30B,   512ull * MB },
+@@ -74,6 +77,7 @@ static const std::map<e_model, size_t> & MEM_REQ_SCRATCH1()
+ static const std::map<e_model, size_t> & MEM_REQ_KV_SELF()
+ {
+     static std::map<e_model, size_t> _MEM_REQ_KV_SELF = {
++        { MODEL_3B,    682ull * MB },
+         { MODEL_7B,   1026ull * MB },
+         { MODEL_13B,  1608ull * MB },
+         { MODEL_30B,  3124ull * MB },
+@@ -87,6 +91,7 @@ static const std::map<e_model, size_t> & MEM_REQ_KV_SELF()
+ static const std::map<e_model, size_t> & MEM_REQ_EVAL()
+ {
+     static std::map<e_model, size_t> _MEM_REQ_EVAL = {
++        { MODEL_3B,   512ull * MB },
+         { MODEL_7B,   768ull * MB },
+         { MODEL_13B, 1024ull * MB },
+         { MODEL_30B, 1280ull * MB },
+@@ -862,6 +867,7 @@ static const char *llama_ftype_name(enum llama_ftype ftype) {
+ 
+ static const char *llama_model_type_name(e_model type) {
+     switch (type) {
++        case MODEL_3B: return "3B";
+         case MODEL_7B: return "7B";
+         case MODEL_13B: return "13B";
+         case MODEL_30B: return "30B";
+@@ -894,6 +900,7 @@ static void llama_model_load_internal(
+ 
+     {
+         switch (hparams.n_layer) {
++            case 26: model.type = e_model::MODEL_3B; break;
+             case 32: model.type = e_model::MODEL_7B; break;
+             case 40: model.type = e_model::MODEL_13B; break;
+             case 60: model.type = e_model::MODEL_30B; break;
