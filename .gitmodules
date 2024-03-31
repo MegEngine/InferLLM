@@ -1,0 +1,12 @@
+[submodule "3rdparty/gtest"]
+	path = 3rdparty/gtest
+	url = git@github.com:google/googletest.git
+	branch = stable
+[submodule "3rdparty/pybind11"]
+	path = 3rdparty/pybind11
+	url = git@github.com:pybind/pybind11.git
+	branch = stable
+[submodule "3rdparty/gbenchmark"]
+	path = 3rdparty/gbenchmark
+	url = git@github.com:google/benchmark.git
+	branch = stable
