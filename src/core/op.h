@@ -446,14 +446,14 @@ class Attention : public OpBase {
 
 class Embedding : public OpBase {
  public:
-  Embedding(OpIOs inputs, uint32_t embd, uint32_t vocab, DType dtype, DType compt_type,
-            Device* device, const std::string& name)
+  Embedding(OpIOs inputs, uint32_t embd, uint32_t vocab, DType compt_type, Device* device,
+            const std::string& name)
       : OpBase(device, name, inputs), m_embd(embd), m_vocab(vocab), m_comp_type(compt_type) {
     add_outputs(std::make_shared<Tensor>(device, name + "_out0"));
 
     auto embeddings = std::make_shared<Tensor>(device, name + ".weight");
     std::vector<size_t> shape = {(size_t)embd, (size_t)vocab};
-    embeddings->set_shape(shape, dtype);
+    embeddings->set_shape(shape);
     set_weights({embeddings});
   }
   void deduce_output_shape() override {

@@ -54,6 +54,10 @@ class Device {
 
   Kernel* kernel() { return m_kernel.get(); }
 
+  void host2device_copy(void* device, const void* host, size_t size) { memcpy(device, host, size); }
+
+  void device2host_copy(void* host, const void* device, size_t size) { memcpy(host, device, size); }
+
  private:
   std::unique_ptr<Kernel> m_kernel;
   std::unique_ptr<ThreadPool> m_thread_pool;

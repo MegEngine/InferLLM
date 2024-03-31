@@ -68,12 +68,18 @@ class Tensor {
 
   ~Tensor();
 
-  std::vector<size_t> shape() { return m_shape; }
+  std::vector<size_t> shape() const { return m_shape; }
 
   void set_shape(std::vector<size_t> shape, DType dtype) {
+    set_dtype(dtype);
+    set_shape(shape);
+  }
+
+  void preprocess_data() {}
+
+  void set_shape(std::vector<size_t> shape) {
     m_dims = shape.size();
     m_shape = shape;
-    m_dtype = dtype;
     //! init the tensor as continue tensor
     m_stride.resize(m_dims);
     m_stride[m_dims - 1] = 1;
@@ -82,22 +88,24 @@ class Tensor {
     }
     m_length = m_shape[0] * m_stride[0];
   }
+
+  void set_dtype(DType dtype) { m_dtype = dtype; }
   std::vector<size_t> stride() { return m_stride; }
 
   OpBase* owner_op() { return m_owner_op; }
   void set_owner_op(OpBase* owner_op) { m_owner_op = owner_op; }
 
-  std::string name() { return m_name; }
+  std::string name() const { return m_name; }
   void set_name(const std::string& name) { m_name = name; }
 
-  uint32_t dims() { return m_dims; }
-  DType dtype() { return m_dtype; }
+  uint32_t dims() const { return m_dims; }
+  DType dtype() const { return m_dtype; }
 
   bool is_own() const { return m_state == TensorState::Own; }
 
-  size_t length() { return m_length; }
+  size_t length() const { return m_length; }
 
-  Device* device() { return m_device; }
+  Device* device() const { return m_device; }
 
   size_t length_in_byte() {
     //! TODO: assert the length is int
@@ -106,7 +114,7 @@ class Tensor {
     return m_length * dtype_in_byte(m_dtype) / dtype_block_size(m_dtype);
   };
 
-  void* ptr() {
+  void* ptr() const {
     INFER_ASSERT(is_own(), "Tensor is OutSide the device, can't get the memory.");
     return m_data;
   };

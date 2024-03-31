@@ -139,8 +139,8 @@ void HeadBlock::execute(WorkSpace* workspace, uint32_t nr_past, bool is_prefill)
 EmbdBlock::EmbdBlock(Graph* graph, std::shared_ptr<Tensor> input, uint32_t embd, uint32_t vocab,
                      UserConfig model_config, Device* device, const std::string& name)
     : OprBlockBase(input, device, name), m_embd(embd), m_graph(graph) {
-  auto embd_out = add_opr<Embedding>(OpIOs{input}, embd, vocab, model_config.weight_type,
-                                     model_config.compt_type, device, "tok_embeddings")[0];
+  auto embd_out = add_opr<Embedding>(OpIOs{input}, embd, vocab, model_config.compt_type, device,
+                                     "tok_embeddings")[0];
   set_output(embd_out);
 }
 
