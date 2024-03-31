@@ -16,34 +16,20 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-#ifndef SRC_KERN_KERNEL_H_
-#define SRC_KERN_KERNEL_H_
+ 
+#include "kvstorage.h"
 
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
+using namespace llm_learning;
 
-#include "core/thread_pool.h"
-#include "kern/kernel_define.h"
-#include "utils.h"
+void KvStorage::set_shared_memory(void* data, size_t size) {
+  Tensor::set_shared_memory(data, size);
+  m_curr_data = static_cast<char*>(ptr()) +
+                static_cast<size_t>((stride()[0] * m_store_id * dtype_in_byte(dtype())));
+}
 
-namespace llm_learning {
-class Kernel {
- public:
-  Kernel(KernelType kernel_type, ThreadPool* thread_pool)
-      : m_kernel_type(kernel_type), m_thread_pool(thread_pool) {}
-
-  uint32_t nr_thread() const { return m_thread_pool->nr_threads(); }
-
-  //! compute
-  template <KernelID Id, typename... Args>
-  void operator()(Args... args);
-
-  template <KernelID Id, typename... Args>
-  size_t get_workspace(Args... args);
-  ThreadPool* m_thread_pool;
-  KernelType m_kernel_type;
-};
-}  // namespace llm_learning
-
-#endif
+TensorState KvStorage::prepare_data() {
+  Tensor::prepare_data();
+  m_curr_data = static_cast<char*>(ptr()) +
+                static_cast<size_t>((stride()[0] * m_store_id * dtype_in_byte(dtype())));
+  return TensorState::Own;
+}

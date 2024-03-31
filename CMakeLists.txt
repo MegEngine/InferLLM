@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.15.2)
 set(CMAKE_EXPORT_COMPILE_COMMANDS
     ON
     CACHE INTERNAL "")
-project(InferLLM LANGUAGES C CXX)
+project(llm_learning LANGUAGES C CXX)
 
 option(ENABLE_ASAN "Build with asan." OFF)
 option(ENABLE_PROFILE "Build with profile information." OFF)
@@ -40,12 +40,12 @@ if(ENABLE_FP16)
     set(CMAKE_CXX_FLAGS " -D__ARM_FEATURE_FP16_VECTOR_ARITHMETIC=1 ${CMAKE_CXX_FLAGS}")
 endif()
 
-file(GLOB_RECURSE SRC src/*/*.cpp src/*/*.h src/*.cpp)
-add_library(InferLLM STATIC ${SRC})
+file(GLOB_RECURSE SRC src/*/*.cc src/*/*.h src/*.cc)
+add_library(llm_learning STATIC ${SRC})
 
-target_include_directories(InferLLM PUBLIC include src)
+target_include_directories(llm_learning PUBLIC include src)
 
-set(CMAKE_CXX_FLAGS " -std=c++11 -pthread ${CMAKE_CXX_FLAGS}")
+set(CMAKE_CXX_FLAGS " -std=c++17 -pthread ${CMAKE_CXX_FLAGS}")
 
 if(CMAKE_BUILD_TYPE MATCHES "Debug")
   set(CMAKE_CXX_FLAGS " -g -O0 ${CMAKE_CXX_FLAGS}")
@@ -54,8 +54,8 @@ else()
 endif()
 
 if(ENABLE_ASAN)
-  if(INFERLLM_ACHIEVE_ALL)
-    message(FATAL_ERROR "Build for INFERLLM_ENABLE_ASAN, do not support static libc")
+  if(llm_learning_ACHIEVE_ALL)
+    message(FATAL_ERROR "Build for llm_learning_ENABLE_ASAN, do not support static libc")
   endif()
   if(${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang")
     set(CMAKE_CXX_FLAGS
@@ -70,5 +70,5 @@ if(ENABLE_ASAN)
   endif()
 endif()
 
-add_executable(alpaca application/alpaca.cpp)
-target_link_libraries(alpaca InferLLM)
+add_executable(alpaca application/alpaca.cc)
+target_link_libraries(alpaca llm_learning)

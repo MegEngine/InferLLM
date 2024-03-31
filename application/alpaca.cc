@@ -116,15 +116,15 @@ int main(int argc, char** argv) {
     std::mt19937 rng(params.seed);
 
     int64_t t_load_us = 0;
-    inferllm::ModelConfig config;
+    llm_learning::ModelConfig config;
     config.device = "cpu";
     config.weight_type = "int4";
     config.compt_type = "float32";
     config.nr_thread = params.n_threads;
     config.enable_mmap = params.use_mmap;
 
-    std::shared_ptr<inferllm::Model> model =
-            std::make_shared<inferllm::Model>(config, "alpaca");
+    std::shared_ptr<llm_learning::Model> model =
+            std::make_shared<llm_learning::Model>(config, "alpaca");
     model->load(params.model);
     model->init(params.top_k, params.top_p, params.temp, params.repeat_penalty,
                 params.repeat_last_n, params.seed);
