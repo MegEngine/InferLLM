@@ -280,6 +280,6 @@ inline void quantize_row_q8_0(const float* __restrict x, void* __restrict vy, in
 }  // namespace opt
 }  // namespace llm_learning
 
-#endif  // SRC_KERN_OPTIMIZED_X86_QUANTIZE_H_
-
 #endif  // INFER_X86
+
+#endif  // SRC_KERN_OPTIMIZED_X86_QUANTIZE_H_

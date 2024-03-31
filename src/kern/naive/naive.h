@@ -19,7 +19,6 @@
 #ifndef SRC_KERN_NAIVE_H_
 #define SRC_KERN_NAIVE_H_
 
-#include "kern/kernel.h"
 #include "kern/naive/quantize.h"
 #include "math.h"
 #include "string.h"
@@ -78,8 +77,8 @@ struct Space {
 };
 
 }  // namespace naive
-
 }  // namespace llm_learning
+
 #ifdef PartialImplementKernel
 #undef PartialImplementKernel
 #endif
@@ -124,4 +123,4 @@ PartialImplementSpace(MatmulInt4Float, llm_matmul_get_workspace_float);
 }  // namespace naive
 }  // namespace llm_learning
 
-#endif
+#endif //SRC_KERN_NAIVE_H_

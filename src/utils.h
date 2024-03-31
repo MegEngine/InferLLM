@@ -19,7 +19,8 @@
 
 // Various helper functions and utilities
 
-#pragma once
+#ifndef SRC_UTILS_H_
+#define SRC_UTILS_H_
 
 #include <fstream>
 #include <list>
@@ -183,3 +184,5 @@ std::string format(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
       abort();                                                      \
     }                                                               \
   } while (0)
+
+#endif

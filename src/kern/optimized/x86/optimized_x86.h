@@ -16,9 +16,9 @@
  * specific language governing permissions and limitations
  * under the License.
  */
- 
-#ifndef SRC_KERN_OPTIMIZED_X8_OPTIMIZED_X86_H_
-#define SRC_KERN_OPTIMIZED_X8_OPTIMIZED_X86_H_
+
+#ifndef SRC_KERN_OPTIMIZED_OPTIMIZED_X86_H_
+#define SRC_KERN_OPTIMIZED_OPTIMIZED_X86_H_
 
 #if INFER_X86
 
@@ -910,4 +910,4 @@ inline void comput_matmul_with_dst_uncontinue(float* __restrict dst, int offset_
 
 #endif  // INFER_X86
 
-#endif  // SRC_KERN_OPTIMIZED_X8_OPTIMIZED_X86_H_
+#endif  // SRC_KERN_OPTIMIZED_OPTIMIZED_X86_H_

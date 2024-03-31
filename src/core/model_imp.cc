@@ -16,11 +16,12 @@
  * specific language governing permissions and limitations
  * under the License.
  */
- 
+
 #include "model_imp.h"
 
 #include <algorithm>
 #include <fstream>
+#include <iostream>
 #include <vector>
 
 #include "file.h"
@@ -47,6 +48,16 @@ DType dtype_from_str(const std::string& str) {
   } else {
     INFER_ASSERT(0, "Unsupported dytpe.");
   }
+}
+
+std::string uint32_to_char(uint32_t value) {
+  char str[5] = {0};
+
+  str[0] = static_cast<char>((value >> 24) & 0xFF);
+  str[1] = static_cast<char>((value >> 16) & 0xFF);
+  str[2] = static_cast<char>((value >> 8) & 0xFF);
+  str[3] = static_cast<char>(value & 0xFF);
+  return std::string(str);
 }
 }  // namespace
 
@@ -76,20 +87,21 @@ void ModelImp::load(const std::string& model_path) {
   uint32_t magic;
   uint32_t version = 0;
   fin->read_raw((char*)&magic, sizeof(magic));
-  if (magic != 'ggml') {
+  std::string model_type_name = uint32_to_char(magic);
+  if (model_type_name != "ggml") {
     fin->read_raw((char*)&version, sizeof(version));
   }
-  if (magic == 'ggml' && version == 0) {
+  if (model_type_name == "ggml" && version == 0) {
     m_model_type = ModelType::LLAMA_FILE_VERSION_GGML;
-  } else if (magic == 'ggmf' && version == 1) {
+  } else if (model_type_name == "ggmf" && version == 1) {
     m_model_type = ModelType::LLAMA_FILE_VERSION_GGMF_V1;
-  } else if (magic == 'ggjt' && version == 1) {
+  } else if (model_type_name == "ggjt" && version == 1) {
     m_model_type = ModelType::LLAMA_FILE_VERSION_GGJT_V1;
   } else {
     INFER_ASSERT(0, "unsupported model type.");
   }
 
-  INFER_LOG("model is %s , version = %d\n", magic != 'ggml' ? "new" : "old", version);
+  INFER_LOG("model is %s , version = %d\n", model_type_name != "ggml" ? "new" : "old", version);
 
   // int n_parts = 1;
   //  load param

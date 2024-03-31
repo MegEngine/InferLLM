@@ -1,4 +1,6 @@
-#pragma once
+#ifndef SRC_KERN_NAIVE_QUANTIZE_H_
+#define SRC_KERN_NAIVE_QUANTIZE_H_
+
 #include <assert.h>
 
 #include "kern/kernel_define.h"
@@ -135,3 +137,5 @@ inline float vec_vec_dot_q40_with_q80_reference(const int n, const void* vx, con
 
 }  // namespace naive
 }  // namespace llm_learning
+
+#endif  // SRC_KERN_NAIVE_QUANTIZE_H_

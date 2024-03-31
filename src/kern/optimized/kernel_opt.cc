@@ -35,8 +35,6 @@
 #include "kern/optimized/arm/quantize.h"
 #endif
 
-using namespace llm_learning;
-
 namespace llm_learning {
 namespace opt {
 TaskSet llm_embedding_get_int4_float(const void* weights, const uint32_t* index, float* dst,

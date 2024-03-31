@@ -16,10 +16,11 @@
  * specific language governing permissions and limitations
  * under the License.
  */
- 
+
 #ifndef SRC_KERN_OPTIMIZED_KERNEL_OPT_H_
 #define SRC_KERN_OPTIMIZED_KERNEL_OPT_H_
 
+#include "kern/kernel_define.h"
 #include "kern/naive/naive.h"
 #include "math.h"
 #include "string.h"
@@ -107,4 +108,4 @@ PartialImplementSpace(MatmulInt4Float, llm_matmul_get_workspace_float);
 }  // namespace opt
 }  // namespace llm_learning
 
-#endif // SRC_KERN_OPTIMIZED_KERNEL_OPT_H_
+#endif  // SRC_KERN_OPTIMIZED_KERNEL_OPT_H_

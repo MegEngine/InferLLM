@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
- 
+
 #ifndef SRC_KERN_OPTIMIZED_X86_COMMON_H_
 #define SRC_KERN_OPTIMIZED_X86_COMMON_H_
 
@@ -222,5 +222,4 @@ static inline v8sf exp256_ps(v8sf x) {
 }  // namespace llm_learning
 
 #endif  // INFER_X86
-
 #endif  // SRC_KERN_OPTIMIZED_X86_COMMON_H_
