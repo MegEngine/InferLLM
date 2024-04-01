@@ -31,6 +31,7 @@ namespace naive {
 
 TaskSet llm_embedding_get_int4_float(const void* weights, const uint32_t* index, float* dst,
                                      uint32_t len_seq, uint32_t embd) {
+  INFER_LOG("using naive kernel implementation.");
   auto task = [=](const TaskId& id) {
     for (uint32_t i = id.start; i < id.end; ++i) {
       const int row = index[i];

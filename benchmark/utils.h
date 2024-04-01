@@ -12,19 +12,9 @@
 #include "file.h"
 
 namespace llm_learning {
-namespace test {
+namespace benchmark {
 
 #include <random>
-
-#if __cplusplus >= 201703L
-#define COMPAT_RANDOM(begin, end)          \
-  {                                        \
-    std::default_random_engine rng_engine; \
-    std::shuffle(begin, end, rng_engine);  \
-  }
-#else
-#define COMPAT_RANDOM(begin, end) std::random_shuffle(begin, end);
-#endif
 
 class RNG {
  protected:
@@ -60,7 +50,7 @@ class NormalRNG final : public IIDRNG {
   bool has_fast_float32() override;
 };
 
-}  // namespace test
+}  // namespace benchmark
 }  // namespace llm_learning
 
 #endif

@@ -1,5 +1,6 @@
 
 #include "check.h"
+#include "core/op.h"
 #include "fixture.h"
 
 using namespace std;
@@ -17,4 +18,15 @@ TEST_F(CPU, TestEmbeding) {
   checker.set_epsilon(1e-3)
       .set_past(0)  //
       .exec({TensorShape{4}});
+}
+
+TEST_F(CPU, TestSoftmax) {
+  Checker<SoftMax> checker(device(), naive_device());
+  checker.set_dtype(0, DType::Int32);
+  NormalRNG rng0(1.f);
+  checker.set_rng(0, &rng0);
+  checker.create_opr();
+  checker.set_epsilon(1e-3)
+      .set_past(0)  //
+      .exec({TensorShape{128, 128}});
 }

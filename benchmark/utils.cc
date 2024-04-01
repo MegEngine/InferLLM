@@ -1,7 +1,7 @@
 
 #include "utils.h"
 namespace llm_learning {
-namespace test {
+namespace benchmark {
 
 class RandomState {
  public:
