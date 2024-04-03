@@ -12,7 +12,7 @@ std::shared_ptr<Graph> Graph::make_graph(
     } else if (name == "chatglm2") {
         return std::make_shared<ChatGLMGraph2>(model_config, device, name);
     } else if (name == "chatglm3") {
-        return std::make_shared<ChatGLMGraph2>(model_config, device, name);
+        return std::make_shared<ChatGLMGraph3>(model_config, device, name);
     } else if (name == "baichuan" || name == "llama2") {
         return std::make_shared<LlamaLikeGraph>(model_config, device, name);
     } else {
