@@ -7,8 +7,8 @@ void ChatGLMGraph3::set_weights_alias() {
     // clang-format off
     m_weights_name_aliases = {
             {"transformer.embedding.word_embeddings.weight", "tok_embeddings.weight"},
-            {"transformer.encoder.layers.0.input_layernorm.weight", "layers.x.attention_norm.weight"},
-            {"transformer.encoder.layers.0.self_attention.query_key_value.weight", "layers.x.attention.wqkv.weight"},
+            {"transformer.encoder.layers.x.input_layernorm.weight", "layers.x.attention_norm.weight"},
+            {"transformer.encoder.layers.x.self_attention.query_key_value.weight", "layers.x.attention.wqkv.weight"},
             {"transformer.encoder.layers.x.self_attention.query_key_value.bias", "layers.x.attention.wqkv.bias"},
             {"transformer.encoder.layers.x.self_attention.dense.weight", "layers.x.attention.wo.weight"},
             {"transformer.encoder.layers.x.post_attention_layernorm.weight", "layers.x.ffn_norm.weight"},
@@ -41,11 +41,16 @@ void ChatGLMGraph3::load_param(
     fin->read_raw((char*)&param.n_vocab, sizeof(param.n_vocab));
     // int32_t multi_query;
     // fin->read_raw((char*)&multi_query, sizeof(multi_query));
-    // param.is_multi_query = multi_query > 0;
+    
     // fin->read_raw(
     //         (char*)&param.multi_query_group_num, sizeof(param.multi_query_group_num));
+    param.is_multi_query = true;
+    param.multi_query_group_num=2;
     param.n_layer=28;
+    param.n_mult=13696;
+
     m_param = param;
+    
 
     // load vocab
     fin->seek(header.vocab_offset);

@@ -320,7 +320,7 @@ void Graph::load(
                 "Error weight is not found when loading.");
         auto weight = m_weights_map[alias_name];
         if (weight->length() != nr_number) {
-            INFER_LOG("weight %s is not match.\n", alias_name.c_str());
+            INFER_LOG("weight %s %zu is not match.\n", alias_name.c_str(), weight->length());
         }
         INFER_ASSERT(
                 weight->length() == nr_number, "Error length of weight is mismatch.");
