@@ -39,15 +39,10 @@ void ChatGLMGraph3::load_param(
     fin->read_raw((char*)&param.n_layer, sizeof(param.n_layer));
     fin->read_raw((char*)&param.n_mult, sizeof(param.n_mult));
     fin->read_raw((char*)&param.n_vocab, sizeof(param.n_vocab));
-    // int32_t multi_query;
-    // fin->read_raw((char*)&multi_query, sizeof(multi_query));
-    
-    // fin->read_raw(
-    //         (char*)&param.multi_query_group_num, sizeof(param.multi_query_group_num));
-    param.is_multi_query = true;
-    param.multi_query_group_num=2;
-    param.n_layer=28;
-    param.n_mult=13696;
+    int32_t multi_query;
+    fin->read_raw((char*)&multi_query, sizeof(multi_query));
+    param.is_multi_query = multi_query > 0;
+    fin->read_raw((char*)&param.multi_query_group_num, sizeof(param.multi_query_group_num));
 
     m_param = param;
     

@@ -1,4 +1,4 @@
-# Convert a ChatGLM model checkpoint to a InferLLM compatible file
+# Convert a baichuan model checkpoint to a InferLLM compatible file
 #
 # Load the model using Torch
 # Iterate over all variables and write them to a binary file.
@@ -27,11 +27,6 @@
 #   - Name (char[name_length])
 #   - Data (int8_t[len])
 #
-# By default, the bigger matrices are converted to 16-bit floats.
-# This can be disabled by adding the "use-f32" CLI argument.
-#
-# At the start of the ggml file we write the model parameters
-# and vocabulary.
 #
 
 import sys
@@ -41,7 +36,7 @@ import numpy as np
 import torch
 import argparse
 import tempfile 
-from transformers import AutoTokenizer, AutoModel
+from transformers import AutoTokenizer, AutoModel, AutoConfig
 from sentencepiece import SentencePieceProcessor 
 
 # parse arguments
@@ -53,31 +48,37 @@ args = parser.parse_args()
 # output in the same directory as the model
 model_out_path = args.outfile
 
-hparams = {
-        "embd_size": 4096,
-        "n_heads": 32,
-        "n_layers": 28,
-        "fc_hidden": 16384,
-}
 dtype = 0
 version = args.version
 if version == 1:
     model = AutoModel.from_pretrained("THUDM/chatglm-6b", trust_remote_code=True).float().state_dict()
     auto_tokenizer = AutoTokenizer.from_pretrained("THUDM/chatglm-6b", trust_remote_code=True)
+    config = AutoConfig.from_pretrained("THUDM/chatglm-6b", trust_remote_code=True)
 elif version == 2:
     model = AutoModel.from_pretrained("THUDM/chatglm2-6b", trust_remote_code=True).float().state_dict()
     auto_tokenizer = AutoTokenizer.from_pretrained("THUDM/chatglm2-6b", trust_remote_code=True)
+    config = AutoConfig.from_pretrained("THUDM/chatglm2-6b", trust_remote_code=True)
+elif version == 3:
+    model = AutoModel.from_pretrained("THUDM/chatglm3-6b", trust_remote_code=True).float().state_dict()
+    auto_tokenizer = AutoTokenizer.from_pretrained("THUDM/chatglm3-6b", trust_remote_code=True)
+    config = AutoConfig.from_pretrained("THUDM/chatglm3-6b", trust_remote_code=True)
 
 _, vocab_file = tempfile.mkstemp()
 auto_tokenizer.save_vocabulary(vocab_file)
 tokenizer = SentencePieceProcessor(vocab_file)
 
+hparams = {
+        "embd_size": config.hidden_size,
+        "n_heads": config.num_attention_heads,
+        "n_layers": config.num_layers,
+}
 hparams.update({"vocab_size": tokenizer.vocab_size()})
 
-if version == 2:
-    hparams.update({"multi_qeury": 1})
-    hparams.update({"attention_patition": 2})
-    hparams.update({"fc_hidden": 13696})
+if version > 1:
+    hparams.update({"multi_qeury": 1 if config.multi_query_attention else 0})
+    hparams.update({"attention_patition": config.multi_query_group_num})
+    hparams.update({"fc_hidden": config.ffn_hidden_size})
+
 
 print(hparams)
 
@@ -91,7 +92,7 @@ param_byte +=struct.pack("i", hparams["n_heads"])
 param_byte +=struct.pack("i", hparams["n_layers"])
 param_byte +=struct.pack("i", hparams["fc_hidden"])
 param_byte +=struct.pack("i", hparams["vocab_size"])
-if version == 2:
+if version > 1:
     param_byte +=struct.pack("i", hparams["multi_qeury"])
     param_byte +=struct.pack("i", hparams["attention_patition"])
 
