@@ -145,6 +145,9 @@ int main(int argc, char** argv) {
     if (params.version == 2) {
         model_name = "chatglm2";
         etoken = 2;
+    }else if(params.version == 3){
+        model_name = "chatglm3";
+        etoken = 2;
     }
 
     std::shared_ptr<inferllm::Model> model =

@@ -50,4 +50,17 @@ public:
 
     void post_tokenize(std::vector<Vocab::Id>& input) override;
 };
+
+class ChatGLMGraph3 : public Graph {
+    using Graph::Graph;
+
+public:
+    void set_weights_alias() override;
+    void construct_llm() override;
+    void load_param(
+            std::shared_ptr<InputFile> fin, LlmParams& param,
+            std::shared_ptr<Vocab> vocab) override;
+
+    void post_tokenize(std::vector<Vocab::Id>& input) override;
+};
 }  // namespace inferllm
